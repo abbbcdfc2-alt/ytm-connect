@@ -362,6 +362,12 @@
   function applyDesktopState(state) {
     if (!state) return;
 
+    if (pendingQueueClick && state.title) {
+      if (state.title.toLowerCase().trim() === pendingQueueClick.title) {
+        pendingQueueClick = null;
+      }
+    }
+
     // Jeśli użytkownik jest w trybie PC, zaktualizuj stan
     if (targetDevice === 'desktop') {
       currentState = Object.assign({}, currentState, state);
@@ -858,6 +864,20 @@
       }
     });
 
+    // 4. Jeśli użytkownik przed chwilą kliknął utwór, utrzymaj podświetlenie
+    if (pendingQueueClick) {
+      const matchIdx = clean.findIndex(q => {
+        if (pendingQueueClick.videoId && q.videoId && q.videoId === pendingQueueClick.videoId) return true;
+        if (pendingQueueClick.title && q.title && q.title.toLowerCase().trim() === pendingQueueClick.title) return true;
+        return q.index === pendingQueueClick.index;
+      });
+      if (matchIdx !== -1) {
+        clean.forEach((q, idx) => {
+          q.selected = (idx === matchIdx);
+        });
+      }
+    }
+
     return clean;
   }
 
@@ -965,22 +985,39 @@
     });
   }
 
+  let pendingQueueClick = null;
+  let pendingQueueTimer = null;
+
   function playQueueItem(index) {
     const item = currentQueue[index];
     if (!item) return;
 
-    // Optymistyczne zaznaczenie jako grający
+    // 1. Zablokuj cofanie zielonej ramki przez 4 sekundy, aż komputer potwierdzi start nowego utworu
+    pendingQueueClick = {
+      index: index,
+      title: (item.title || '').toLowerCase().trim(),
+      videoId: item.videoId || ''
+    };
+    if (pendingQueueTimer) clearTimeout(pendingQueueTimer);
+    pendingQueueTimer = setTimeout(() => {
+      pendingQueueClick = null;
+    }, 4000);
+
+    // 2. Optymistyczne natychmiastowe zaznaczenie w telefonie
     currentQueue.forEach((q, idx) => {
       q.selected = (idx === index);
     });
     renderQueueList();
 
+    // 3. Wyślij pełną informację do PC
     if (targetDevice === 'desktop') {
-      if (item.videoId) {
-        sendCommand('play_queue_item', item.videoId);
-      } else {
-        sendCommand('play_queue_item', index);
-      }
+      const origIdx = (typeof item.originalIndex === 'number') ? item.originalIndex : index;
+      sendCommand('play_queue_item', {
+        index: index,
+        originalIndex: origIdx,
+        videoId: item.videoId || '',
+        title: item.title || ''
+      });
     } else {
       if (item.videoId) {
         loadPhoneVideo(item.videoId, 0);
@@ -991,18 +1028,31 @@
   function moveQueueItem(fromIndex, toIndex) {
     if (fromIndex < 0 || fromIndex >= currentQueue.length || toIndex < 0 || toIndex >= currentQueue.length) return;
 
+    const fromItem = currentQueue[fromIndex];
+    const toItem = currentQueue[toIndex];
+    const fromOriginal = fromItem && typeof fromItem.originalIndex === 'number' ? fromItem.originalIndex : fromIndex;
+    const toOriginal = toItem && typeof toItem.originalIndex === 'number' ? toItem.originalIndex : toIndex;
+
     // Optymistyczna zamiana kolejności w interfejsie
     const moved = currentQueue.splice(fromIndex, 1)[0];
     currentQueue.splice(toIndex, 0, moved);
     renderQueueList();
 
     if (targetDevice === 'desktop') {
-      sendCommand('move_queue_item', { from: fromIndex, to: toIndex });
+      sendCommand('move_queue_item', {
+        from: fromIndex,
+        to: toIndex,
+        fromOriginal: fromOriginal,
+        toOriginal: toOriginal
+      });
     }
   }
 
   function removeQueueItem(index) {
     if (index < 0 || index >= currentQueue.length) return;
+
+    const item = currentQueue[index];
+    const origIdx = item && typeof item.originalIndex === 'number' ? item.originalIndex : index;
 
     // Optymistyczne usunięcie z listy
     currentQueue.splice(index, 1);
@@ -1012,7 +1062,10 @@
     renderQueueList();
 
     if (targetDevice === 'desktop') {
-      sendCommand('remove_queue_item', index);
+      sendCommand('remove_queue_item', {
+        index: index,
+        originalIndex: origIdx
+      });
     }
   }
 
