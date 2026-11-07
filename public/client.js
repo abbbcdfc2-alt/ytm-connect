@@ -632,6 +632,17 @@
     }
   }
 
+  let lastCommandTimes = {};
+  function sendCommandDebounced(action, value, cooldownMs = 350) {
+    const now = Date.now();
+    if (lastCommandTimes[action] && (now - lastCommandTimes[action]) < cooldownMs) {
+      console.log(`[Pilot] Zignorowano szybkie podwójne kliknięcie: ${action} (${now - lastCommandTimes[action]}ms)`);
+      return;
+    }
+    lastCommandTimes[action] = now;
+    sendCommand(action, value);
+  }
+
   function sendCommand(action, value) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       console.warn('[Pilot] WebSocket nie jest otwarty, pomijanie komendy:', action);
@@ -688,7 +699,7 @@
   playBtn.addEventListener('click', () => {
     if (targetDevice === 'desktop') {
       if (currentState.isPlaying) {
-        sendCommand('pause');
+        sendCommandDebounced('pause');
         currentState.isPlaying = false;
         playIcon.classList.remove('hidden');
         pauseIcon.classList.add('hidden');
@@ -697,7 +708,7 @@
         if ((!currentState.title || currentState.title.includes('Brak')) && selectedSong) {
           playBySong(selectedSong);
         } else {
-          sendCommand('play');
+          sendCommandDebounced('play');
         }
         currentState.isPlaying = true;
         playIcon.classList.add('hidden');
@@ -715,14 +726,14 @@
       currentState.likeStatus = nextStatus;
       updateLikeButtonsUI(nextStatus);
       if (targetDevice === 'desktop') {
-        sendCommand('like');
+        sendCommandDebounced('like');
       }
     });
   }
 
   prevBtn.addEventListener('click', () => {
     if (targetDevice === 'desktop') {
-      sendCommand('prev');
+      sendCommandDebounced('prev');
     } else {
       phoneSeek(0);
     }
@@ -730,7 +741,7 @@
 
   nextBtn.addEventListener('click', () => {
     if (targetDevice === 'desktop') {
-      sendCommand('next');
+      sendCommandDebounced('next');
     } else {
       phoneSeek(currentState.duration || 0);
     }
@@ -742,7 +753,7 @@
       currentState.likeStatus = nextStatus;
       updateLikeButtonsUI(nextStatus);
       if (targetDevice === 'desktop') {
-        sendCommand('dislike');
+        sendCommandDebounced('dislike');
       }
     });
   }
@@ -1247,12 +1258,12 @@
     // 3. Wyślij pełną informację do PC
     if (targetDevice === 'desktop') {
       const origIdx = (typeof item.originalIndex === 'number') ? item.originalIndex : index;
-      sendCommand('play_queue_item', {
+      sendCommandDebounced('play_queue_item', {
         index: index,
         originalIndex: origIdx,
         videoId: item.videoId || '',
         title: item.title || ''
-      });
+      }, 400);
     } else {
       if (item.videoId) {
         loadPhoneVideo(item.videoId, 0);
