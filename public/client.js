@@ -532,6 +532,11 @@
         btnOpenInYtmApp.classList.remove('hidden');
       }
 
+      if (state.title && currentState.title && state.title !== currentState.title) {
+        currentState.duration = 0;
+        currentState.currentTime = 0;
+      }
+
       const dur = (typeof state.duration === 'number' && isFinite(state.duration) && state.duration > 0)
         ? Math.floor(state.duration)
         : (currentState.duration || 0);
