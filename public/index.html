@@ -188,10 +188,19 @@
             <button id="logoutBtn" class="btn-account-logout">Wyloguj</button>
           </div>
           <div class="account-email-box">
-            <label for="settingsEmailInput">E-mail do resetu hasła:</label>
-            <div class="input-with-action">
+            <label>E-mail do resetu hasła:</label>
+            <!-- Zamaskowany widok (domyślny) -->
+            <div id="mobileEmailDisplayBox" class="email-display-group">
+              <span id="mobileMaskedEmailText" class="masked-email-text">••••••••••••</span>
+              <button type="button" id="mobileBtnEditEmail" class="btn-edit-email" title="Edytuj e-mail">✏️ Edytuj</button>
+            </div>
+            <!-- Formularz edycji (ukryty do kliknięcia Edytuj) -->
+            <div id="mobileEmailEditBox" class="input-with-action hidden">
               <input type="email" id="settingsEmailInput" placeholder="twoj-email@gmail.com" autocomplete="email">
-              <button id="saveEmailBtn" class="btn-action-small">Zapisz</button>
+              <div class="email-edit-btn-group">
+                <button type="button" id="saveEmailBtn" class="btn-action-small">💾 Zapisz</button>
+                <button type="button" id="cancelMobileEmailEditBtn" class="btn-action-small btn-cancel">✕ Anuluj</button>
+              </div>
             </div>
             <span class="email-status-text" id="emailStatusText"></span>
           </div>

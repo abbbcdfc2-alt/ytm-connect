@@ -278,10 +278,41 @@
   const cancelForgotBtn2 = document.getElementById('cancelForgotBtn2');
 
   const accountUsername = document.getElementById('accountUsername');
+  const mobileEmailDisplayBox = document.getElementById('mobileEmailDisplayBox');
+  const mobileMaskedEmailText = document.getElementById('mobileMaskedEmailText');
+  const mobileBtnEditEmail = document.getElementById('mobileBtnEditEmail');
+  const mobileEmailEditBox = document.getElementById('mobileEmailEditBox');
+  const cancelMobileEmailEditBtn = document.getElementById('cancelMobileEmailEditBtn');
   const settingsEmailInput = document.getElementById('settingsEmailInput');
   const saveEmailBtn = document.getElementById('saveEmailBtn');
   const emailStatusText = document.getElementById('emailStatusText');
   const logoutBtn = document.getElementById('logoutBtn');
+
+  let currentMobileEmail = localStorage.getItem('ytm_email') || '';
+
+  function maskEmail(email) {
+    if (!email || !email.includes('@')) return '(brak adresu e-mail)';
+    const parts = email.split('@');
+    const name = parts[0];
+    const domain = parts.slice(1).join('@');
+    if (name.length <= 3) {
+      return name.charAt(0) + '•••@' + domain;
+    }
+    return name.slice(0, 2) + '••••' + name.slice(-2) + '@' + domain;
+  }
+
+  function updateMobileEmailUI(email) {
+    currentMobileEmail = email || '';
+    if (mobileMaskedEmailText) mobileMaskedEmailText.textContent = maskEmail(currentMobileEmail);
+    if (settingsEmailInput) settingsEmailInput.value = currentMobileEmail;
+    if (mobileEmailDisplayBox) mobileEmailDisplayBox.classList.remove('hidden');
+    if (mobileEmailEditBox) mobileEmailEditBox.classList.add('hidden');
+  }
+
+  // Zainicjalizuj zamaskowany e-mail z pamięci
+  if (currentMobileEmail) {
+    updateMobileEmailUI(currentMobileEmail);
+  }
 
   function forceAppReload() {
     if (window.AndroidBridge && window.AndroidBridge.forceReload) {
@@ -404,11 +435,54 @@
         config.username = msg.username;
         localStorage.setItem('ytm_username', msg.username);
         if (accountUsername) accountUsername.textContent = msg.username;
+        if (msg.email) {
+          localStorage.setItem('ytm_email', msg.email);
+          updateMobileEmailUI(msg.email);
+        }
         if (authOverlay) authOverlay.classList.add('hidden');
       } else if (!msg.authenticated && config.token) {
-        config.token = '';
-        localStorage.removeItem('ytm_token');
-        if (authOverlay) authOverlay.classList.remove('hidden');
+        const remUser = localStorage.getItem('ytm_username');
+        const remKey = localStorage.getItem('ytm_reauth_key') || localStorage.getItem('ytm_user_hash');
+        if (remUser && remKey) {
+          // Spróbuj cichej reautoryzacji zanim usuniesz token
+          fetch('/api/auth/reauth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: remUser, reauthKey: remKey, token: config.token })
+          })
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.authenticated && data.token) {
+              config.token = data.token;
+              localStorage.setItem('ytm_token', data.token);
+              if (data.email) {
+                localStorage.setItem('ytm_email', data.email);
+                updateMobileEmailUI(data.email);
+              }
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'register',
+                  role: 'phone',
+                  name: config.name,
+                  room: config.room,
+                  token: data.token
+                }));
+              }
+              if (authOverlay) authOverlay.classList.add('hidden');
+            } else {
+              config.token = '';
+              localStorage.removeItem('ytm_token');
+              if (authOverlay) authOverlay.classList.remove('hidden');
+            }
+          })
+          .catch(() => {
+            // W razie błędu sieci nie wylogowuj
+          });
+        } else {
+          config.token = '';
+          localStorage.removeItem('ytm_token');
+          if (authOverlay) authOverlay.classList.remove('hidden');
+        }
       }
       if (msg.room) {
         config.room = msg.room;
@@ -1367,7 +1441,7 @@
             }
             if (data.email) {
               localStorage.setItem('ytm_email', data.email);
-              if (settingsEmailInput) settingsEmailInput.value = data.email;
+              updateMobileEmailUI(data.email);
             }
             if (accountUsername) accountUsername.textContent = data.username;
             if (authOverlay) authOverlay.classList.add('hidden');
@@ -1393,7 +1467,10 @@
         .then(data => {
           if (data && data.authenticated) {
             if (data.username && accountUsername) accountUsername.textContent = data.username;
-            if (data.email && settingsEmailInput) settingsEmailInput.value = data.email;
+            if (data.email) {
+              localStorage.setItem('ytm_email', data.email);
+              updateMobileEmailUI(data.email);
+            }
           }
         }).catch(() => {});
     }
@@ -1565,6 +1642,27 @@
     });
   }
 
+  // Przełączanie trybu edycji adresu e-mail w telefonie
+  if (mobileBtnEditEmail) {
+    mobileBtnEditEmail.addEventListener('click', () => {
+      if (mobileEmailDisplayBox) mobileEmailDisplayBox.classList.add('hidden');
+      if (mobileEmailEditBox) mobileEmailEditBox.classList.remove('hidden');
+      if (settingsEmailInput) {
+        settingsEmailInput.value = currentMobileEmail || '';
+        settingsEmailInput.focus();
+      }
+      if (emailStatusText) emailStatusText.textContent = '';
+    });
+  }
+
+  if (cancelMobileEmailEditBtn) {
+    cancelMobileEmailEditBtn.addEventListener('click', () => {
+      if (mobileEmailEditBox) mobileEmailEditBox.classList.add('hidden');
+      if (mobileEmailDisplayBox) mobileEmailDisplayBox.classList.remove('hidden');
+      if (emailStatusText) emailStatusText.textContent = '';
+    });
+  }
+
   // Zapisywanie e-maila w oknie ustawień
   if (saveEmailBtn) {
     saveEmailBtn.addEventListener('click', async () => {
@@ -1594,6 +1692,14 @@
             emailStatusText.textContent = data.error || 'Błąd zapisu';
           }
         } else {
+          currentMobileEmail = emailVal;
+          localStorage.setItem('ytm_email', emailVal);
+          if (data.token) {
+            config.token = data.token;
+            localStorage.setItem('ytm_token', data.token);
+          }
+          updateMobileEmailUI(currentMobileEmail);
+
           if (emailStatusText) {
             emailStatusText.className = 'email-status-text success';
             emailStatusText.textContent = 'E-mail zapisany pomyślnie!';
@@ -1607,7 +1713,7 @@
         }
       } finally {
         saveEmailBtn.disabled = false;
-        saveEmailBtn.textContent = 'Zapisz';
+        saveEmailBtn.textContent = '💾 Zapisz';
       }
     });
   }
@@ -1704,7 +1810,10 @@
         }
 
         if (accountUsername) accountUsername.textContent = data.username;
-        if (data.email && settingsEmailInput) settingsEmailInput.value = data.email;
+        if (data.email) {
+          localStorage.setItem('ytm_email', data.email);
+          updateMobileEmailUI(data.email);
+        }
         if (authOverlay) authOverlay.classList.add('hidden');
         if (loginPassword) loginPassword.value = '';
 
@@ -1795,7 +1904,10 @@
         }
 
         if (accountUsername) accountUsername.textContent = data.username;
-        if (data.email && settingsEmailInput) settingsEmailInput.value = data.email;
+        if (data.email) {
+          localStorage.setItem('ytm_email', data.email);
+          updateMobileEmailUI(data.email);
+        }
         if (authOverlay) authOverlay.classList.add('hidden');
         if (regPassword) regPassword.value = '';
         if (regPasswordConfirm) regPasswordConfirm.value = '';
@@ -1828,9 +1940,11 @@
       config.username = '';
       localStorage.removeItem('ytm_token');
       localStorage.removeItem('ytm_username');
+      localStorage.removeItem('ytm_email');
       localStorage.removeItem('ytm_remember_me');
       localStorage.removeItem('ytm_reauth_key');
       localStorage.removeItem('ytm_user_hash');
+      updateMobileEmailUI('');
 
       if (settingsModal) settingsModal.classList.add('hidden');
       if (authOverlay) authOverlay.classList.remove('hidden');

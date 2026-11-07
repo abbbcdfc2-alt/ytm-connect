@@ -1333,6 +1333,57 @@ body {
   gap: 8px;
 }
 
+.email-display-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 7px 12px;
+}
+
+.masked-email-text {
+  font-family: monospace;
+  font-size: 13px;
+  color: #00e676;
+  letter-spacing: 0.5px;
+  word-break: break-all;
+}
+
+.btn-edit-email {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.2s;
+}
+
+.btn-edit-email:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.email-edit-btn-group {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-action-small.btn-cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: #bbb;
+}
+
+.btn-action-small.btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
 .input-with-action input {
   flex: 1;
   background: #181818;

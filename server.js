@@ -28,6 +28,53 @@ if (fs.existsSync(oldAccountsFile)) {
 }
 
 let accountsData = { users: {}, tokens: {}, resetCodes: {} };
+const SESSION_SECRET = process.env.SESSION_SECRET || 'ytm_connect_ultra_secret_sig_key_2026_salt_98471203';
+
+function signToken(payload) {
+  const jsonStr = JSON.stringify(payload);
+  const b64 = Buffer.from(jsonStr, 'utf8').toString('base64url');
+  const hmac = crypto.createHmac('sha256', SESSION_SECRET).update(b64).digest('base64url');
+  return `${b64}.${hmac}`;
+}
+
+function verifyToken(tokenStr) {
+  if (!tokenStr || typeof tokenStr !== 'string') return null;
+  const parts = tokenStr.split('.');
+  if (parts.length !== 2) return null;
+  const [b64, signature] = parts;
+  const expectedHmac = crypto.createHmac('sha256', SESSION_SECRET).update(b64).digest('base64url');
+  try {
+    const sigBuf = Buffer.from(signature, 'utf8');
+    const expBuf = Buffer.from(expectedHmac, 'utf8');
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return null;
+    }
+    const jsonStr = Buffer.from(b64, 'base64url').toString('utf8');
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    return null;
+  }
+}
+
+function createTokenForUser(user) {
+  const payload = {
+    u: user.username,
+    d: user.displayName || user.username,
+    e: user.email || '',
+    s: user.salt,
+    h: user.hash,
+    k: user.reauthKey || user.hash,
+    v: 1,
+    iat: Math.floor(Date.now() / 1000)
+  };
+  const token = signToken(payload);
+  accountsData.tokens[token] = {
+    username: user.username,
+    createdAt: new Date().toISOString()
+  };
+  saveAccounts();
+  return token;
+}
 
 function loadAccounts() {
   try {
@@ -208,12 +255,7 @@ function loginUser(username, password) {
     user.reauthKey = crypto.randomBytes(32).toString('hex');
   }
 
-  const token = crypto.randomBytes(24).toString('hex');
-  accountsData.tokens[token] = {
-    username: lowerUser,
-    createdAt: new Date().toISOString()
-  };
-  saveAccounts();
+  const token = createTokenForUser(user);
 
   console.log(`[Auth] Zalogowano pomyślnie: ${user.displayName}`);
 
@@ -265,13 +307,7 @@ function registerUser(username, password, confirmPassword, email) {
   };
 
   accountsData.users[lowerUser] = user;
-
-  const token = crypto.randomBytes(24).toString('hex');
-  accountsData.tokens[token] = {
-    username: lowerUser,
-    createdAt: new Date().toISOString()
-  };
-  saveAccounts();
+  const token = createTokenForUser(user);
 
   console.log(`[Auth] Zarejestrowano nowe konto: ${cleanUser} (${cleanEmail})`);
 
@@ -294,10 +330,39 @@ function authenticateOrRegister(username, password, email) {
 }
 
 function getUserByToken(token) {
-  if (!token || !accountsData.tokens[token]) return null;
-  const tokenInfo = accountsData.tokens[token];
-  const user = accountsData.users[tokenInfo.username];
-  return user || null;
+  if (!token || typeof token !== 'string') return null;
+
+  // 1. Sprawdź szybki cache w pamięci
+  if (accountsData.tokens[token]) {
+    const tokenInfo = accountsData.tokens[token];
+    const user = accountsData.users[tokenInfo.username];
+    if (user) return user;
+  }
+
+  // 2. Jeśli serwer zrestartował się lub pamięć jest pusta, zweryfikuj podpis kryptograficzny tokena
+  const payload = verifyToken(token);
+  if (payload && payload.u && payload.s && payload.h) {
+    // Automatycznie przywróć konto do bazy danych serwera po restarcie Render!
+    const restoredUser = {
+      username: payload.u,
+      displayName: payload.d || payload.u,
+      email: payload.e || '',
+      salt: payload.s,
+      hash: payload.h,
+      reauthKey: payload.k || payload.h,
+      createdAt: accountsData.users[payload.u]?.createdAt || new Date().toISOString()
+    };
+    accountsData.users[payload.u] = restoredUser;
+    accountsData.tokens[token] = {
+      username: payload.u,
+      createdAt: new Date().toISOString()
+    };
+    saveAccounts();
+    console.log(`[Auth] Przywrócono konto '${restoredUser.displayName}' z podpisanego tokena sesji.`);
+    return restoredUser;
+  }
+
+  return null;
 }
 
 function readJsonBody(req, callback) {
@@ -349,6 +414,9 @@ const server = http.createServer((req, res) => {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ error: 'Wpisz login i hasło' }));
         return;
+      }
+      if (data.existingToken) {
+        getUserByToken(data.existingToken);
       }
       const result = loginUser(data.username, data.password);
       if (result.error) {
@@ -547,13 +615,8 @@ const server = http.createServer((req, res) => {
         }
       }
 
-      // Wygeneruj nowy token sesji
-      const newToken = crypto.randomBytes(24).toString('hex');
-      accountsData.tokens[newToken] = {
-        username: lowerUser,
-        createdAt: new Date().toISOString()
-      };
-      saveAccounts();
+      // Wygeneruj nowy podpisany token sesji
+      const newToken = createTokenForUser(user);
 
       console.log(`[Auth] ✅ Zresetowano i zapisano nowe hasło dla konta: ${user.displayName}`);
 
@@ -574,27 +637,24 @@ const server = http.createServer((req, res) => {
   if (reqUrl === '/api/auth/reauth' && req.method === 'POST') {
     readJsonBody(req, (err, data) => {
       const clientKey = data.reauthKey || data.userHash; // kompatybilność wsteczna
-      if (err || !data.username || !clientKey) {
+      if (err || !data.username) {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ authenticated: false }));
         return;
+      }
+      if (data.token) {
+        getUserByToken(data.token);
       }
       const lower = data.username.trim().toLowerCase();
       let user = accountsData.users[lower];
 
       const keyToMatch = user ? (user.reauthKey || user.hash) : null;
-      if (user && keyToMatch && timingSafeEqualStr(keyToMatch, clientKey)) {
+      if (user && keyToMatch && (!clientKey || timingSafeEqualStr(keyToMatch, clientKey))) {
         // Zaktualizuj do reauthKey jeśli konto korzystało jeszcze ze starego hasha
         if (!user.reauthKey) {
           user.reauthKey = crypto.randomBytes(32).toString('hex');
         }
-        const newToken = crypto.randomBytes(24).toString('hex');
-        accountsData.tokens[newToken] = {
-          username: lower,
-          createdAt: new Date().toISOString(),
-          permanent: true
-        };
-        saveAccounts();
+        const newToken = createTokenForUser(user);
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({
           authenticated: true,
@@ -635,10 +695,10 @@ const server = http.createServer((req, res) => {
       }
 
       user.email = cleanEmail;
-      saveAccounts();
+      const newToken = createTokenForUser(user);
 
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ success: true, email: cleanEmail }));
+      res.end(JSON.stringify({ success: true, email: cleanEmail, token: newToken }));
     });
     return;
   }
@@ -871,6 +931,7 @@ function handleRegister(ws, data) {
     type: 'auth_status',
     authenticated: !!accountUser,
     username: accountUser ? accountUser.displayName : null,
+    email: accountUser ? (accountUser.email || '') : null,
     room: roomName
   }));
 
