@@ -238,6 +238,7 @@ function authenticateOrRegister(username, password, email) {
     token: token,
     username: user.displayName,
     email: user.email || '',
+    userHash: user.hash,
     isNew: isNew
   };
 }
@@ -486,8 +487,45 @@ const server = http.createServer((req, res) => {
         token: newToken,
         username: user.displayName,
         email: user.email || '',
+        userHash: user.hash,
         message: 'Hasło zostało pomyślnie zmienione! Zalogowano na nowe dane.'
       }));
+    });
+    return;
+  }
+
+  // --- API Autoryzacji Stałej Sesji (Zapamiętaj mnie - Sesja nie wygasa) ---
+  if (reqUrl === '/api/auth/reauth' && req.method === 'POST') {
+    readJsonBody(req, (err, data) => {
+      if (err || !data.username || !data.userHash) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ authenticated: false }));
+        return;
+      }
+      const lower = data.username.trim().toLowerCase();
+      let user = accountsData.users[lower];
+
+      if (user && timingSafeEqualStr(user.hash, data.userHash)) {
+        const newToken = crypto.randomBytes(24).toString('hex');
+        accountsData.tokens[newToken] = {
+          username: lower,
+          createdAt: new Date().toISOString(),
+          permanent: true
+        };
+        saveAccounts();
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          authenticated: true,
+          token: newToken,
+          username: user.displayName,
+          email: user.email || '',
+          userHash: user.hash
+        }));
+        return;
+      }
+
+      res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ authenticated: false }));
     });
     return;
   }

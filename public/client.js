@@ -242,6 +242,7 @@
   const authUsername = document.getElementById('authUsername');
   const authPassword = document.getElementById('authPassword');
   const authEmail = document.getElementById('authEmail');
+  const rememberMeMobile = document.getElementById('rememberMeMobile');
   const authSubmitBtn = document.getElementById('authSubmitBtn');
   const authError = document.getElementById('authError');
   const openForgotBtn = document.getElementById('openForgotBtn');
@@ -417,8 +418,11 @@
   function applyDesktopState(state) {
     if (!state) return;
 
-    if (pendingQueueClick && state.title) {
-      if (state.title.toLowerCase().trim() === pendingQueueClick.title) {
+    if (pendingQueueClick) {
+      const vidMatch = pendingQueueClick.videoId && state.videoId && (state.videoId === pendingQueueClick.videoId);
+      const titleMatch = pendingQueueClick.title && state.title && (state.title.toLowerCase().trim() === pendingQueueClick.title);
+      // Zwolnij blokadę tylko jeśli komputer naprawdę zmienił utwór na kliknięty
+      if (vidMatch || (titleMatch && (Date.now() - (pendingQueueClick.time || 0) > 1500))) {
         pendingQueueClick = null;
       }
     }
@@ -911,10 +915,10 @@
   }
 
   function deduplicateQueue(queue) {
-    if (!Array.isArray(queue) || queue.length <= 1) return queue || [];
+    if (!Array.isArray(queue) || queue.length === 0) return [];
 
     // 1. Jeśli cała tablica to zdwojony zestaw (z dwóch kontenerów DOM YouTube Music)
-    if (queue.length % 2 === 0) {
+    if (queue.length > 2 && queue.length % 2 === 0) {
       const half = queue.length / 2;
       let isExactHalfDuplicate = true;
       for (let i = 0; i < half; i++) {
@@ -930,60 +934,77 @@
       }
     }
 
-    // 2. Usuń pary duplikatów występujące bezpośrednio obok siebie (wersja wideo + wersja audio)
+    // 2. Usuń pary duplikatów występujące bezpośrednio obok siebie (np. wersja wideo + wersja audio)
     const clean = [];
     for (let i = 0; i < queue.length; i++) {
       const item = queue[i];
       if (!item || !item.title) continue;
 
-      const norm = item.title.toLowerCase().trim().replace(/\s*\(video\s*version\)/gi, '').replace(/\s*\(official\s*video\)/gi, '');
+      const norm = (item.title || '').toLowerCase().replace(/\s+/g, ' ').trim()
+        .replace(/\s*\(video\s*version\)/gi, '')
+        .replace(/\s*\(official\s*video\)/gi, '')
+        .replace(/\s*\(audio\)/gi, '');
+
       const prev = clean.length > 0 ? clean[clean.length - 1] : null;
 
       if (prev) {
-        const prevNorm = prev.title.toLowerCase().trim().replace(/\s*\(video\s*version\)/gi, '').replace(/\s*\(official\s*video\)/gi, '');
+        const prevNorm = (prev.title || '').toLowerCase().replace(/\s+/g, ' ').trim()
+          .replace(/\s*\(video\s*version\)/gi, '')
+          .replace(/\s*\(official\s*video\)/gi, '')
+          .replace(/\s*\(audio\)/gi, '');
+
         if (norm === prevNorm) {
           // Jeśli obecny utwór gra lub ma okładkę, podmień poprzedni
           if ((item.selected && !prev.selected) || (!prev.thumb && item.thumb)) {
-            clean[clean.length - 1] = item;
+            clean[clean.length - 1] = { ...prev, ...item, selected: item.selected || prev.selected };
           }
           continue;
         }
       }
 
       // Jeśli brakuje okładki, uzupełnij z YouTube CDN
-      if ((!item.thumb || item.thumb.includes('data:image')) && item.videoId) {
-        item.thumb = `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`;
+      let finalThumb = item.thumb;
+      if ((!finalThumb || finalThumb.includes('data:image')) && item.videoId) {
+        finalThumb = `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`;
       }
 
-      clean.push(item);
+      clean.push({
+        ...item,
+        thumb: finalThumb
+      });
     }
 
-    // 3. Bezwzględnie dopilnuj, aby tylko JEDEN utwór na całej liście miał zaznaczenie 'selected'
-    let foundPlaying = false;
-    clean.forEach((item, idx) => {
-      item.index = idx;
-      if (item.selected) {
-        if (!foundPlaying) {
-          foundPlaying = true;
-        } else {
-          item.selected = false;
-        }
-      }
-    });
+    // 3. Bezwzględnie dopilnuj, aby DOKŁADNIE JEDEN utwór na całej liście miał zaznaczenie 'selected'
+    let selectedIndex = -1;
 
-    // 4. Jeśli użytkownik przed chwilą kliknął utwór, utrzymaj podświetlenie
+    // A. Jeśli użytkownik przed chwilą kliknął utwór, utrzymaj podświetlenie klikniętego
     if (pendingQueueClick) {
-      const matchIdx = clean.findIndex(q => {
+      selectedIndex = clean.findIndex(q => {
         if (pendingQueueClick.videoId && q.videoId && q.videoId === pendingQueueClick.videoId) return true;
         if (pendingQueueClick.title && q.title && q.title.toLowerCase().trim() === pendingQueueClick.title) return true;
         return q.index === pendingQueueClick.index;
       });
-      if (matchIdx !== -1) {
-        clean.forEach((q, idx) => {
-          q.selected = (idx === matchIdx);
-        });
+    }
+
+    // B. Jeśli brak blokady kliknięcia, dopasuj do aktualnie grającego utworu
+    if (selectedIndex === -1) {
+      if (currentState.videoId) {
+        selectedIndex = clean.findIndex(q => q.videoId && q.videoId === currentState.videoId);
+      }
+      if (selectedIndex === -1) {
+        selectedIndex = clean.findIndex(q => q.selected);
+      }
+      if (selectedIndex === -1 && currentState.title && !currentState.title.includes('Brak')) {
+        const curNorm = currentState.title.toLowerCase().trim();
+        selectedIndex = clean.findIndex(q => q.title && q.title.toLowerCase().trim() === curNorm);
       }
     }
+
+    // C. Wymuś absolutną unikalność - tylko selectedIndex dostaje true, żaden inny!
+    clean.forEach((item, idx) => {
+      item.index = idx;
+      item.selected = (idx === selectedIndex);
+    });
 
     return clean;
   }
@@ -1099,18 +1120,19 @@
     const item = currentQueue[index];
     if (!item) return;
 
-    // 1. Zablokuj cofanie zielonej ramki przez 4 sekundy, aż komputer potwierdzi start nowego utworu
+    // 1. Zablokuj cofanie zielonej ramki aż komputer potwierdzi start nowego utworu (lub miną 4 sekundy)
     pendingQueueClick = {
       index: index,
       title: (item.title || '').toLowerCase().trim(),
-      videoId: item.videoId || ''
+      videoId: item.videoId || '',
+      time: Date.now()
     };
     if (pendingQueueTimer) clearTimeout(pendingQueueTimer);
     pendingQueueTimer = setTimeout(() => {
       pendingQueueClick = null;
     }, 4000);
 
-    // 2. Optymistyczne natychmiastowe zaznaczenie w telefonie
+    // 2. Bezwzględnie TYLKO kliknięty element ma zaznaczenie w telefonie
     currentQueue.forEach((q, idx) => {
       q.selected = (idx === index);
     });
@@ -1296,6 +1318,40 @@
     }
 
     if (!config.token) {
+      const rem = localStorage.getItem('ytm_remember_me') === 'true';
+      const remUser = localStorage.getItem('ytm_username');
+      const remHash = localStorage.getItem('ytm_user_hash');
+      if (rem && remUser && remHash) {
+        // Cicha stała reautoryzacja (sesja nie wygasa)
+        fetch('/api/auth/reauth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: remUser, userHash: remHash })
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.authenticated && data.token) {
+            config.token = data.token;
+            config.username = data.username;
+            localStorage.setItem('ytm_token', data.token);
+            if (data.email) {
+              localStorage.setItem('ytm_email', data.email);
+              if (settingsEmailInput) settingsEmailInput.value = data.email;
+            }
+            if (accountUsername) accountUsername.textContent = data.username;
+            if (authOverlay) authOverlay.classList.add('hidden');
+            connect();
+          } else {
+            switchAuthView('login');
+            if (authOverlay) authOverlay.classList.remove('hidden');
+          }
+        }).catch(() => {
+          switchAuthView('login');
+          if (authOverlay) authOverlay.classList.remove('hidden');
+        });
+        return;
+      }
+
       switchAuthView('login');
       if (authOverlay) authOverlay.classList.remove('hidden');
     } else {
@@ -1451,6 +1507,8 @@
         config.username = data.username;
         localStorage.setItem('ytm_token', data.token);
         localStorage.setItem('ytm_username', data.username);
+        localStorage.setItem('ytm_remember_me', 'true');
+        if (data.userHash) localStorage.setItem('ytm_user_hash', data.userHash);
 
         if (accountUsername) accountUsername.textContent = data.username;
         if (authOverlay) authOverlay.classList.add('hidden');
@@ -1529,6 +1587,7 @@
       const u = authUsername.value.trim();
       const p = authPassword.value.trim();
       const e = authEmail ? authEmail.value.trim() : '';
+      const rem = rememberMeMobile ? rememberMeMobile.checked : true;
 
       if (!u) {
         showAuthError('Wpisz nazwę użytkownika / login');
@@ -1563,6 +1622,14 @@
         localStorage.setItem('ytm_token', data.token);
         localStorage.setItem('ytm_username', data.username);
 
+        if (rem) {
+          localStorage.setItem('ytm_remember_me', 'true');
+          if (data.userHash) localStorage.setItem('ytm_user_hash', data.userHash);
+        } else {
+          localStorage.removeItem('ytm_remember_me');
+          localStorage.removeItem('ytm_user_hash');
+        }
+
         if (accountUsername) accountUsername.textContent = data.username;
         if (data.email && settingsEmailInput) settingsEmailInput.value = data.email;
         if (authOverlay) authOverlay.classList.add('hidden');
@@ -1596,6 +1663,8 @@
       config.username = '';
       localStorage.removeItem('ytm_token');
       localStorage.removeItem('ytm_username');
+      localStorage.removeItem('ytm_remember_me');
+      localStorage.removeItem('ytm_user_hash');
 
       if (settingsModal) settingsModal.classList.add('hidden');
       if (authOverlay) authOverlay.classList.remove('hidden');
