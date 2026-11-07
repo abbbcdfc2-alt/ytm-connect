@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>YTM Connect</title>
   <meta name="theme-color" content="#121212">
-  <link rel="stylesheet" href="style.css?v=1.3.3">
+  <link rel="stylesheet" href="style.css?v=1.4.0">
 </head>
 <body>
   <!-- Ambientny blur w tle na bazie aktualnej okładki -->
@@ -157,6 +157,17 @@
     <div class="modal hidden" id="settingsModal">
       <div class="modal-content">
         <h3>Ustawienia YTM Connect</h3>
+
+        <div class="account-badge-card" id="accountBadgeCard">
+          <div class="account-card-header">
+            <span class="account-avatar-small">👤</span>
+            <div class="account-card-text">
+              <span class="account-card-label">Konto YTM:</span>
+              <b class="account-card-name" id="accountUsername">--</b>
+            </div>
+            <button id="logoutBtn" class="btn-account-logout">Wyloguj</button>
+          </div>
+        </div>
         
         <label for="roomInput">Kod pokoju / PIN:</label>
         <input type="text" id="roomInput" value="ytm-room-1">
@@ -181,6 +192,33 @@
           </a>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Ekran Logowania / Rejestracji Konta -->
+  <div class="auth-overlay hidden" id="authOverlay">
+    <div class="auth-card">
+      <div class="auth-logo">🎵</div>
+      <h2 class="auth-title">YTM Connect</h2>
+      <p class="auth-subtitle">Zaloguj się, aby połączyć aplikację z komputerem</p>
+
+      <div class="auth-error hidden" id="authError"></div>
+
+      <div class="auth-form-group">
+        <label for="authUsername">Login / Nazwa użytkownika</label>
+        <input type="text" id="authUsername" placeholder="np. filip" autocomplete="username" spellcheck="false" autocapitalize="none">
+      </div>
+
+      <div class="auth-form-group">
+        <label for="authPassword">Hasło</label>
+        <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password">
+      </div>
+
+      <button id="authSubmitBtn" class="auth-submit-btn">Zaloguj / Utwórz konto</button>
+
+      <p class="auth-hint">
+        Wpisz nazwę konta i hasło. Jeśli konto jeszcze nie istnieje, zostanie automatycznie utworzone. Zaloguj się tymi samymi danymi w rozszerzeniu na komputerze!
+      </p>
     </div>
   </div>
 
@@ -222,6 +260,6 @@
   </div>
 
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="client.js?v=1.3.3"></script>
+  <script src="client.js?v=1.4.0"></script>
 </body>
 </html>

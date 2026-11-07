@@ -2,13 +2,178 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 
 const PORT = process.env.PORT || 3000;
-const SERVER_BUILD_ID = 'v1.3.2-' + Date.now();
+const SERVER_BUILD_ID = 'v1.4.0-' + Date.now();
+
+// --- Baza Kont i Tokenów (Zapisywana do pliku accounts.json) ---
+const ACCOUNTS_FILE = path.join(__dirname, 'accounts.json');
+let accountsData = { users: {}, tokens: {} };
+
+function loadAccounts() {
+  try {
+    if (fs.existsSync(ACCOUNTS_FILE)) {
+      const content = fs.readFileSync(ACCOUNTS_FILE, 'utf8');
+      accountsData = JSON.parse(content);
+      if (!accountsData.users) accountsData.users = {};
+      if (!accountsData.tokens) accountsData.tokens = {};
+    }
+  } catch (e) {
+    console.warn('[Auth] Błąd odczytu accounts.json:', e);
+  }
+}
+
+function saveAccounts() {
+  try {
+    fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accountsData, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[Auth] Błąd zapisu accounts.json:', e);
+  }
+}
+
+loadAccounts();
+
+function hashPassword(password, salt) {
+  return crypto.scryptSync(password, salt, 64).toString('hex');
+}
+
+function authenticateOrRegister(username, password) {
+  if (!username || typeof username !== 'string' || !username.trim()) {
+    return { error: 'Podaj nazwę użytkownika' };
+  }
+  if (!password || typeof password !== 'string' || password.length < 3) {
+    return { error: 'Hasło musi mieć co najmniej 3 znaki' };
+  }
+
+  const cleanUser = username.trim();
+  const lowerUser = cleanUser.toLowerCase();
+
+  let user = accountsData.users[lowerUser];
+  let isNew = false;
+
+  if (!user) {
+    // Rejestracja nowego konta
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = hashPassword(password, salt);
+    user = {
+      username: lowerUser,
+      displayName: cleanUser,
+      salt: salt,
+      hash: hash,
+      createdAt: new Date().toISOString()
+    };
+    accountsData.users[lowerUser] = user;
+    isNew = true;
+    console.log(`[Auth] Utworzono nowe konto: ${cleanUser}`);
+  } else {
+    // Logowanie do istniejącego konta
+    const testHash = hashPassword(password, user.salt);
+    if (testHash !== user.hash) {
+      return { error: 'Nieprawidłowe hasło dla tego konta' };
+    }
+    console.log(`[Auth] Zalogowano pomyślnie: ${user.displayName}`);
+  }
+
+  // Wygeneruj bezpieczny token sesji (ważny na stałe do momentu wylogowania)
+  const token = crypto.randomBytes(24).toString('hex');
+  accountsData.tokens[token] = {
+    username: lowerUser,
+    createdAt: new Date().toISOString()
+  };
+  saveAccounts();
+
+  return {
+    success: true,
+    token: token,
+    username: user.displayName,
+    isNew: isNew
+  };
+}
+
+function getUserByToken(token) {
+  if (!token || !accountsData.tokens[token]) return null;
+  const tokenInfo = accountsData.tokens[token];
+  const user = accountsData.users[tokenInfo.username];
+  return user || null;
+}
+
+function readJsonBody(req, callback) {
+  let body = '';
+  req.on('data', chunk => {
+    body += chunk;
+    if (body.length > 5e5) req.socket.destroy();
+  });
+  req.on('end', () => {
+    try {
+      const data = body ? JSON.parse(body) : {};
+      callback(null, data);
+    } catch (e) {
+      callback(e, null);
+    }
+  });
+}
 
 const server = http.createServer((req, res) => {
   let reqUrl = req.url.split('?')[0];
+
+  // Nagłówki CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // --- API Autoryzacji Kont ---
+  if (reqUrl === '/api/auth/login' && req.method === 'POST') {
+    readJsonBody(req, (err, data) => {
+      if (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Nieprawidłowy format JSON' }));
+        return;
+      }
+      const result = authenticateOrRegister(data.username, data.password);
+      if (result.error) {
+        res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: result.error }));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      }
+    });
+    return;
+  }
+
+  if (reqUrl === '/api/auth/me') {
+    const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
+    const token = parsedUrl.searchParams.get('token') || (req.headers.authorization ? req.headers.authorization.replace('Bearer ', '') : '');
+    const user = getUserByToken(token);
+    if (user) {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ authenticated: true, username: user.displayName }));
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ authenticated: false }));
+    }
+    return;
+  }
+
+  if (reqUrl === '/api/auth/logout' && req.method === 'POST') {
+    readJsonBody(req, (err, data) => {
+      if (data && data.token && accountsData.tokens[data.token]) {
+        delete accountsData.tokens[data.token];
+        saveAccounts();
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true }));
+    });
+    return;
+  }
 
   // API statusu podłączonych urządzeń
   if (reqUrl === '/api/status') {
@@ -143,7 +308,23 @@ wss.on('connection', (ws) => {
 });
 
 function handleRegister(ws, data) {
-  const roomName = data.room || 'ytm-room-1';
+  let roomName = null;
+  let accountUser = null;
+
+  if (data.token) {
+    accountUser = getUserByToken(data.token);
+    if (accountUser) {
+      roomName = 'acc_' + accountUser.username;
+      ws.account = accountUser.username;
+      ws.displayName = accountUser.displayName;
+    }
+  }
+
+  // Jeśli brak ważnego tokenu, użyj zadanego pokoju (kompatybilność)
+  if (!roomName) {
+    roomName = data.room || 'ytm-room-1';
+  }
+
   ws.room = roomName;
   ws.role = data.role || 'mobile';
   ws.deviceName = data.name || (ws.role === 'desktop' ? 'Komputer (Firefox)' : 'Telefon (Android)');
@@ -153,7 +334,16 @@ function handleRegister(ws, data) {
   }
   rooms.get(roomName).add(ws);
 
-  console.log(`[WS] Zalogowano ${ws.deviceName} [${ws.role}] w pokoju: ${roomName}`);
+  console.log(`[WS] Zalogowano ${ws.deviceName} [${ws.role}] (Konto: ${ws.displayName || 'brak'}) w pokoju: ${roomName}`);
+
+  // Potwierdź stan autoryzacji
+  ws.send(JSON.stringify({
+    type: 'auth_status',
+    authenticated: !!accountUser,
+    username: accountUser ? accountUser.displayName : null,
+    room: roomName
+  }));
+
   broadcastRoomInfo(roomName);
 
   if (ws.role === 'mobile' && roomStates.has(roomName)) {

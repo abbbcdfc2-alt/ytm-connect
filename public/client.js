@@ -6,7 +6,9 @@
   let config = {
     room: localStorage.getItem('ytm_room') || 'ytm-room-1',
     name: localStorage.getItem('ytm_device_name') || 'Redmi Note 12 Pro (YTM Connect)',
-    serverUrl: localStorage.getItem('ytm_server_url') || ''
+    serverUrl: localStorage.getItem('ytm_server_url') || '',
+    token: localStorage.getItem('ytm_token') || '',
+    username: localStorage.getItem('ytm_username') || ''
   };
 
   let currentState = {
@@ -228,6 +230,15 @@
   const saveModalBtn = document.getElementById('saveModalBtn');
   const cancelModalBtn = document.getElementById('cancelModalBtn');
 
+  // Elementy Konta i Logowania
+  const authOverlay = document.getElementById('authOverlay');
+  const authUsername = document.getElementById('authUsername');
+  const authPassword = document.getElementById('authPassword');
+  const authSubmitBtn = document.getElementById('authSubmitBtn');
+  const authError = document.getElementById('authError');
+  const accountUsername = document.getElementById('accountUsername');
+  const logoutBtn = document.getElementById('logoutBtn');
+
   function forceAppReload() {
     if (window.AndroidBridge && window.AndroidBridge.forceReload) {
       window.AndroidBridge.forceReload();
@@ -303,7 +314,8 @@
         type: 'register',
         role: 'mobile',
         name: config.name,
-        room: config.room
+        room: config.room,
+        token: config.token || ''
       }));
       updateStatus('connected', 'Połączono');
     };
@@ -342,6 +354,21 @@
         setTimeout(forceAppReload, 600);
       } else {
         localStorage.setItem('ytm_server_version', msg.version);
+      }
+    } else if (msg.type === 'auth_status') {
+      if (msg.authenticated && msg.username) {
+        config.username = msg.username;
+        localStorage.setItem('ytm_username', msg.username);
+        if (accountUsername) accountUsername.textContent = msg.username;
+        if (authOverlay) authOverlay.classList.add('hidden');
+      } else if (!msg.authenticated && config.token) {
+        config.token = '';
+        localStorage.removeItem('ytm_token');
+        if (authOverlay) authOverlay.classList.remove('hidden');
+      }
+      if (msg.room) {
+        config.room = msg.room;
+        localStorage.setItem('ytm_room', msg.room);
       }
     } else if (msg.type === 'desktop_state') {
       applyDesktopState(msg.state);
@@ -767,6 +794,7 @@
     roomInput.value = config.room;
     nameInput.value = config.name;
     serverInput.value = config.serverUrl || window.location.origin;
+    if (accountUsername) accountUsername.textContent = config.username || 'Niezalogowany';
     settingsModal.classList.remove('hidden');
   });
 
@@ -1153,6 +1181,112 @@
     sheetHeader.addEventListener('touchmove', onSheetTouchMove, { passive: false });
     sheetHeader.addEventListener('touchend', onSheetTouchEnd);
   }
+
+  // --- Obsługa Konta i Logowania ---
+  function showAuthError(msg) {
+    if (!authError) return;
+    if (!msg) {
+      authError.classList.add('hidden');
+      authError.textContent = '';
+      return;
+    }
+    authError.textContent = msg;
+    authError.classList.remove('hidden');
+  }
+
+  function checkAuthOnStart() {
+    if (accountUsername && config.username) {
+      accountUsername.textContent = config.username;
+    }
+
+    if (!config.token) {
+      if (authOverlay) authOverlay.classList.remove('hidden');
+    } else {
+      if (authOverlay) authOverlay.classList.add('hidden');
+    }
+  }
+
+  if (authSubmitBtn) {
+    authSubmitBtn.addEventListener('click', async () => {
+      const u = authUsername.value.trim();
+      const p = authPassword.value.trim();
+
+      if (!u) {
+        showAuthError('Wpisz nazwę użytkownika / login');
+        return;
+      }
+      if (!p || p.length < 3) {
+        showAuthError('Hasło musi mieć co najmniej 3 znaki');
+        return;
+      }
+
+      authSubmitBtn.disabled = true;
+      authSubmitBtn.textContent = 'Logowanie...';
+      showAuthError('');
+
+      try {
+        const resp = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u, password: p })
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+          showAuthError(data.error || 'Błąd logowania');
+          authSubmitBtn.disabled = false;
+          authSubmitBtn.textContent = 'Zaloguj / Utwórz konto';
+          return;
+        }
+
+        config.token = data.token;
+        config.username = data.username;
+        localStorage.setItem('ytm_token', data.token);
+        localStorage.setItem('ytm_username', data.username);
+
+        if (accountUsername) accountUsername.textContent = data.username;
+        if (authOverlay) authOverlay.classList.add('hidden');
+        authPassword.value = '';
+
+        // Zrestartuj połączenie z nowym tokenem konta
+        if (ws) ws.close();
+        else connect();
+      } catch (err) {
+        showAuthError('Błąd połączenia z serwerem: ' + err.message);
+      } finally {
+        authSubmitBtn.disabled = false;
+        authSubmitBtn.textContent = 'Zaloguj / Utwórz konto';
+      }
+    });
+  }
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      if (config.token) {
+        try {
+          await fetch('/api/auth/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: config.token })
+          });
+        } catch(e) {}
+      }
+
+      config.token = '';
+      config.username = '';
+      localStorage.removeItem('ytm_token');
+      localStorage.removeItem('ytm_username');
+
+      if (settingsModal) settingsModal.classList.add('hidden');
+      if (authOverlay) authOverlay.classList.remove('hidden');
+      if (accountUsername) accountUsername.textContent = '--';
+
+      if (ws) ws.close();
+    });
+  }
+
+  // Sprawdź stan autoryzacji przy starcie
+  checkAuthOnStart();
 
   // Start aplikacji
   connect();
