@@ -233,13 +233,38 @@
   const saveModalBtn = document.getElementById('saveModalBtn');
   const cancelModalBtn = document.getElementById('cancelModalBtn');
 
-  // Elementy Konta i Logowania
+  // Elementy Konta, Logowania i Resetu Hasła
   const authOverlay = document.getElementById('authOverlay');
+  const authLoginCard = document.getElementById('authLoginCard');
+  const authForgotStep1Card = document.getElementById('authForgotStep1Card');
+  const authForgotStep2Card = document.getElementById('authForgotStep2Card');
+
   const authUsername = document.getElementById('authUsername');
   const authPassword = document.getElementById('authPassword');
+  const authEmail = document.getElementById('authEmail');
   const authSubmitBtn = document.getElementById('authSubmitBtn');
   const authError = document.getElementById('authError');
+  const openForgotBtn = document.getElementById('openForgotBtn');
+
+  const forgotIdentifierInput = document.getElementById('forgotIdentifierInput');
+  const forgotExtraEmailGroup = document.getElementById('forgotExtraEmailGroup');
+  const forgotExtraEmailInput = document.getElementById('forgotExtraEmailInput');
+  const sendResetCodeBtn = document.getElementById('sendResetCodeBtn');
+  const forgotStep1Error = document.getElementById('forgotStep1Error');
+  const cancelForgotBtn1 = document.getElementById('cancelForgotBtn1');
+
+  const forgotSuccessInfo = document.getElementById('forgotSuccessInfo');
+  const forgotStep2Error = document.getElementById('forgotStep2Error');
+  const resetCodeInput = document.getElementById('resetCodeInput');
+  const resetNewPasswordInput = document.getElementById('resetNewPasswordInput');
+  const resetConfirmPasswordInput = document.getElementById('resetConfirmPasswordInput');
+  const submitNewPasswordBtn = document.getElementById('submitNewPasswordBtn');
+  const cancelForgotBtn2 = document.getElementById('cancelForgotBtn2');
+
   const accountUsername = document.getElementById('accountUsername');
+  const settingsEmailInput = document.getElementById('settingsEmailInput');
+  const saveEmailBtn = document.getElementById('saveEmailBtn');
+  const emailStatusText = document.getElementById('emailStatusText');
   const logoutBtn = document.getElementById('logoutBtn');
 
   function forceAppReload() {
@@ -1236,7 +1261,24 @@
     sheetHeader.addEventListener('touchend', onSheetTouchEnd);
   }
 
-  // --- Obsługa Konta i Logowania ---
+  // --- Obsługa Konta, Logowania i Resetowania Hasła ---
+  let currentResetUsername = '';
+
+  function switchAuthView(viewName) {
+    if (authLoginCard) authLoginCard.classList.toggle('hidden', viewName !== 'login');
+    if (authForgotStep1Card) authForgotStep1Card.classList.toggle('hidden', viewName !== 'step1');
+    if (authForgotStep2Card) authForgotStep2Card.classList.toggle('hidden', viewName !== 'step2');
+    showAuthError('');
+    if (forgotStep1Error) {
+      forgotStep1Error.textContent = '';
+      forgotStep1Error.classList.add('hidden');
+    }
+    if (forgotStep2Error) {
+      forgotStep2Error.textContent = '';
+      forgotStep2Error.classList.add('hidden');
+    }
+  }
+
   function showAuthError(msg) {
     if (!authError) return;
     if (!msg) {
@@ -1254,16 +1296,239 @@
     }
 
     if (!config.token) {
+      switchAuthView('login');
       if (authOverlay) authOverlay.classList.remove('hidden');
     } else {
       if (authOverlay) authOverlay.classList.add('hidden');
+      // Pobierz dane konta (np. powiązany email)
+      fetch('/api/auth/me?token=' + encodeURIComponent(config.token))
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.authenticated) {
+            if (data.username && accountUsername) accountUsername.textContent = data.username;
+            if (data.email && settingsEmailInput) settingsEmailInput.value = data.email;
+          }
+        }).catch(() => {});
     }
   }
 
+  // Przełączanie na ekran resetu hasła
+  if (openForgotBtn) {
+    openForgotBtn.addEventListener('click', () => {
+      switchAuthView('step1');
+      if (authUsername && authUsername.value.trim() && forgotIdentifierInput) {
+        forgotIdentifierInput.value = authUsername.value.trim();
+      }
+    });
+  }
+
+  if (cancelForgotBtn1) {
+    cancelForgotBtn1.addEventListener('click', () => switchAuthView('login'));
+  }
+
+  if (cancelForgotBtn2) {
+    cancelForgotBtn2.addEventListener('click', () => switchAuthView('login'));
+  }
+
+  // Krok 1: Wysłanie kodu weryfikacyjnego
+  if (sendResetCodeBtn) {
+    sendResetCodeBtn.addEventListener('click', async () => {
+      const identifier = forgotIdentifierInput ? forgotIdentifierInput.value.trim() : '';
+      const extraEmail = forgotExtraEmailInput ? forgotExtraEmailInput.value.trim() : '';
+
+      if (!identifier) {
+        if (forgotStep1Error) {
+          forgotStep1Error.textContent = 'Wpisz swój login lub adres e-mail';
+          forgotStep1Error.classList.remove('hidden');
+        }
+        return;
+      }
+
+      sendResetCodeBtn.disabled = true;
+      sendResetCodeBtn.textContent = 'Wysyłanie kodu...';
+      if (forgotStep1Error) forgotStep1Error.classList.add('hidden');
+
+      try {
+        const resp = await fetch('/api/auth/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier, email: extraEmail })
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+          if (data.requiresEmail) {
+            if (forgotExtraEmailGroup) forgotExtraEmailGroup.classList.remove('hidden');
+          }
+          if (forgotStep1Error) {
+            forgotStep1Error.textContent = data.error || 'Błąd wysyłania kodu';
+            forgotStep1Error.classList.remove('hidden');
+          }
+          return;
+        }
+
+        // Sukces - przejdź do kroku 2
+        currentResetUsername = data.username || identifier;
+        switchAuthView('step2');
+
+        if (forgotSuccessInfo) {
+          let msgText = data.message || `Kod wysłany na Twój adres e-mail!`;
+          if (data.debugCode) {
+            msgText += ` (Kod weryfikacyjny: ${data.debugCode})`;
+          }
+          forgotSuccessInfo.textContent = msgText;
+          forgotSuccessInfo.classList.remove('hidden');
+        }
+
+        if (resetCodeInput) resetCodeInput.focus();
+      } catch (err) {
+        if (forgotStep1Error) {
+          forgotStep1Error.textContent = 'Błąd połączenia z serwerem: ' + err.message;
+          forgotStep1Error.classList.remove('hidden');
+        }
+      } finally {
+        sendResetCodeBtn.disabled = false;
+        sendResetCodeBtn.textContent = 'Wyślij kod weryfikacyjny';
+      }
+    });
+  }
+
+  // Krok 2: Weryfikacja kodu i zapis NOWEGO HASŁA
+  if (submitNewPasswordBtn) {
+    submitNewPasswordBtn.addEventListener('click', async () => {
+      const code = resetCodeInput ? resetCodeInput.value.trim() : '';
+      const p1 = resetNewPasswordInput ? resetNewPasswordInput.value.trim() : '';
+      const p2 = resetConfirmPasswordInput ? resetConfirmPasswordInput.value.trim() : '';
+
+      if (!code || code.length < 4) {
+        if (forgotStep2Error) {
+          forgotStep2Error.textContent = 'Wpisz 6-cyfrowy kod weryfikacyjny z e-maila';
+          forgotStep2Error.classList.remove('hidden');
+        }
+        return;
+      }
+      if (!p1 || p1.length < 3) {
+        if (forgotStep2Error) {
+          forgotStep2Error.textContent = 'Nowe hasło musi mieć co najmniej 3 znaki';
+          forgotStep2Error.classList.remove('hidden');
+        }
+        return;
+      }
+      if (p1 !== p2) {
+        if (forgotStep2Error) {
+          forgotStep2Error.textContent = 'Wpisane hasła nie są identyczne!';
+          forgotStep2Error.classList.remove('hidden');
+        }
+        return;
+      }
+
+      submitNewPasswordBtn.disabled = true;
+      submitNewPasswordBtn.textContent = 'Zapisywanie nowego hasła...';
+      if (forgotStep2Error) forgotStep2Error.classList.add('hidden');
+
+      try {
+        const resp = await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: currentResetUsername,
+            code: code,
+            newPassword: p1
+          })
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+          if (forgotStep2Error) {
+            forgotStep2Error.textContent = data.error || 'Błąd resetowania hasła';
+            forgotStep2Error.classList.remove('hidden');
+          }
+          return;
+        }
+
+        // Sukces - nowe hasło zapisane i zalogowano!
+        config.token = data.token;
+        config.username = data.username;
+        localStorage.setItem('ytm_token', data.token);
+        localStorage.setItem('ytm_username', data.username);
+
+        if (accountUsername) accountUsername.textContent = data.username;
+        if (authOverlay) authOverlay.classList.add('hidden');
+
+        if (resetCodeInput) resetCodeInput.value = '';
+        if (resetNewPasswordInput) resetNewPasswordInput.value = '';
+        if (resetConfirmPasswordInput) resetConfirmPasswordInput.value = '';
+
+        switchAuthView('login');
+
+        // Zrestartuj połączenie z nowym tokenem
+        if (ws) ws.close();
+        else connect();
+      } catch (err) {
+        if (forgotStep2Error) {
+          forgotStep2Error.textContent = 'Błąd połączenia: ' + err.message;
+          forgotStep2Error.classList.remove('hidden');
+        }
+      } finally {
+        submitNewPasswordBtn.disabled = false;
+        submitNewPasswordBtn.textContent = 'Zapisz nowe hasło i zaloguj';
+      }
+    });
+  }
+
+  // Zapisywanie e-maila w oknie ustawień
+  if (saveEmailBtn) {
+    saveEmailBtn.addEventListener('click', async () => {
+      const emailVal = settingsEmailInput ? settingsEmailInput.value.trim() : '';
+      if (!emailVal || !emailVal.includes('@')) {
+        if (emailStatusText) {
+          emailStatusText.className = 'email-status-text error';
+          emailStatusText.textContent = 'Podaj poprawny adres e-mail';
+        }
+        return;
+      }
+
+      saveEmailBtn.disabled = true;
+      saveEmailBtn.textContent = 'Zapis...';
+
+      try {
+        const resp = await fetch('/api/auth/update-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: config.token, email: emailVal })
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+          if (emailStatusText) {
+            emailStatusText.className = 'email-status-text error';
+            emailStatusText.textContent = data.error || 'Błąd zapisu';
+          }
+        } else {
+          if (emailStatusText) {
+            emailStatusText.className = 'email-status-text success';
+            emailStatusText.textContent = 'E-mail zapisany pomyślnie!';
+            setTimeout(() => { emailStatusText.textContent = ''; }, 3000);
+          }
+        }
+      } catch (e) {
+        if (emailStatusText) {
+          emailStatusText.className = 'email-status-text error';
+          emailStatusText.textContent = 'Błąd połączenia';
+        }
+      } finally {
+        saveEmailBtn.disabled = false;
+        saveEmailBtn.textContent = 'Zapisz';
+      }
+    });
+  }
+
+  // Standardowe logowanie / rejestracja
   if (authSubmitBtn) {
     authSubmitBtn.addEventListener('click', async () => {
       const u = authUsername.value.trim();
       const p = authPassword.value.trim();
+      const e = authEmail ? authEmail.value.trim() : '';
 
       if (!u) {
         showAuthError('Wpisz nazwę użytkownika / login');
@@ -1282,7 +1547,7 @@
         const resp = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: u, password: p })
+          body: JSON.stringify({ username: u, password: p, email: e })
         });
         const data = await resp.json();
 
@@ -1299,6 +1564,7 @@
         localStorage.setItem('ytm_username', data.username);
 
         if (accountUsername) accountUsername.textContent = data.username;
+        if (data.email && settingsEmailInput) settingsEmailInput.value = data.email;
         if (authOverlay) authOverlay.classList.add('hidden');
         authPassword.value = '';
 

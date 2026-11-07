@@ -3,6 +3,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const { WebSocketServer, WebSocket } = require('ws');
 
 const PORT = process.env.PORT || 3000;
@@ -26,7 +27,7 @@ if (fs.existsSync(oldAccountsFile)) {
   } catch (e) {}
 }
 
-let accountsData = { users: {}, tokens: {} };
+let accountsData = { users: {}, tokens: {}, resetCodes: {} };
 
 function loadAccounts() {
   try {
@@ -35,6 +36,7 @@ function loadAccounts() {
       accountsData = JSON.parse(content);
       if (!accountsData.users) accountsData.users = {};
       if (!accountsData.tokens) accountsData.tokens = {};
+      if (!accountsData.resetCodes) accountsData.resetCodes = {};
     }
   } catch (e) {
     console.warn('[Auth] Błąd odczytu accounts.json:', e);
@@ -51,11 +53,137 @@ function saveAccounts() {
 
 loadAccounts();
 
+// --- Zabezpieczenia: Porównywanie odporne na ataki czasowe (Timing Attacks) ---
+function timingSafeEqualStr(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// --- Zabezpieczenia: Rate Limiter w pamięci (Ochrona przed atakami brute-force) ---
+const rateLimits = new Map();
+
+function checkRateLimit(key, maxRequests = 10, windowMs = 15 * 60 * 1000) {
+  const now = Date.now();
+  let record = rateLimits.get(key);
+
+  if (!record || now > record.resetTime) {
+    record = { count: 1, resetTime: now + windowMs };
+    rateLimits.set(key, record);
+    return true;
+  }
+
+  if (record.count >= maxRequests) {
+    return false;
+  }
+
+  record.count++;
+  return true;
+}
+
+// Czyszczenie wygasłych limitów co 10 minut
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of rateLimits.entries()) {
+    if (now > val.resetTime) rateLimits.delete(key);
+  }
+}, 10 * 60 * 1000);
+
+// --- Obsługa Wysyłki E-mail (Nodemailer z obsługą SMTP i fallbacku) ---
+let mailTransporter = null;
+
+function getMailTransporter() {
+  if (mailTransporter) return mailTransporter;
+
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const user = process.env.SMTP_USER || '';
+  const pass = process.env.SMTP_PASS || '';
+  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
+
+  if (user && pass) {
+    try {
+      mailTransporter = nodemailer.createTransport({
+        host: host,
+        port: port,
+        secure: secure,
+        auth: { user, pass },
+        tls: { rejectUnauthorized: false }
+      });
+      console.log(`[Email] Skonfigurowano transporter SMTP: ${host}:${port} (${user})`);
+    } catch (e) {
+      console.warn('[Email] Błąd konfiguracji SMTP:', e);
+    }
+  }
+  return mailTransporter;
+}
+
+function maskEmail(email) {
+  if (!email || !email.includes('@')) return '***@***';
+  const [user, domain] = email.split('@');
+  const maskedUser = user.length <= 2 ? user[0] + '***' : user[0] + '***' + user[user.length - 1];
+  const domainParts = domain.split('.');
+  const dName = domainParts[0];
+  const maskedDomain = (dName.length <= 2 ? dName[0] + '***' : dName[0] + '***' + dName[dName.length - 1]) + '.' + domainParts.slice(1).join('.');
+  return `${maskedUser}@${maskedDomain}`;
+}
+
+async function sendResetEmail(toEmail, code, username) {
+  const transporter = getMailTransporter();
+  const fromAddress = process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@ytm-connect.local';
+
+  const htmlContent = `
+    <div style="font-family: Arial, -apple-system, BlinkMacSystemFont, sans-serif; background-color: #121212; color: #ffffff; padding: 30px; border-radius: 14px; max-width: 480px; margin: 0 auto; border: 1px solid #2a2a2a;">
+      <h2 style="color: #1db954; margin-top: 0; font-size: 22px;">🎵 YTM Connect</h2>
+      <p style="font-size: 15px; color: #e0e0e0;">Witaj <b>${username}</b>,</p>
+      <p style="font-size: 14px; color: #b0b0b0; line-height: 1.5;">Otrzymaliśmy prośbę o zresetowanie hasła do Twojego konta w YTM Connect. Twój 6-cyfrowy kod weryfikacyjny to:</p>
+      <div style="background: rgba(29, 185, 84, 0.15); border: 2px solid #1db954; color: #1db954; font-size: 34px; font-weight: bold; letter-spacing: 8px; text-align: center; padding: 18px; border-radius: 10px; margin: 24px 0;">
+        ${code}
+      </div>
+      <p style="font-size: 13px; color: #888888; line-height: 1.4;">Kod jest ważny przez <b>15 minut</b>. Po wpisaniu kodu będziesz mógł ustalić nowe hasło do swojego konta.</p>
+      <p style="font-size: 12px; color: #555555; margin-top: 24px; border-top: 1px solid #222; padding-top: 12px;">Jeśli nie prosiłeś o zmianę hasła, zignoruj tę wiadomość.</p>
+    </div>
+  `;
+
+  if (transporter) {
+    try {
+      const info = await transporter.sendMail({
+        from: `"YTM Connect" <${fromAddress}>`,
+        to: toEmail,
+        subject: `Twój kod resetu hasła YTM Connect: ${code}`,
+        text: `Twój kod weryfikacyjny do resetu hasła YTM Connect to: ${code} (kod jest ważny przez 15 minut).`,
+        html: htmlContent
+      });
+      console.log(`[Email] ✅ Wysłano e-mail z kodem do ${toEmail} (ID: ${info.messageId})`);
+      return { success: true };
+    } catch (err) {
+      console.error(`[Email] ❌ Błąd wysyłania e-maila:`, err);
+      return { success: false, error: 'Błąd wysyłania e-maila przez SMTP: ' + err.message };
+    }
+  } else {
+    // Tryb symulacji / development gdy zmienne SMTP_USER i SMTP_PASS nie zostały jeszcze ustawione w Render
+    console.log(`\n======================================================`);
+    console.log(`[RESET HASŁA - BRAK ZMIENNYCH SMTP_USER I SMTP_PASS W ENV]`);
+    console.log(`Konto: ${username} (${toEmail})`);
+    console.log(`KOD WERYFIKACYJNY: ${code}`);
+    console.log(`Aby maile wysyłały się na prawdziwą skrzynkę, dodaj SMTP_USER i SMTP_PASS w panelu Render.`);
+    console.log(`======================================================\n`);
+    return {
+      success: true,
+      simulated: true,
+      debugCode: code,
+      message: 'Kod wygenerowany! (Skonfiguruj SMTP_USER i SMTP_PASS w Render dla wysyłki na e-mail).'
+    };
+  }
+}
+
 function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 64).toString('hex');
 }
 
-function authenticateOrRegister(username, password) {
+function authenticateOrRegister(username, password, email) {
   if (!username || typeof username !== 'string' || !username.trim()) {
     return { error: 'Podaj nazwę użytkownika' };
   }
@@ -76,18 +204,23 @@ function authenticateOrRegister(username, password) {
     user = {
       username: lowerUser,
       displayName: cleanUser,
+      email: (email && typeof email === 'string' && email.includes('@')) ? email.trim().toLowerCase() : '',
       salt: salt,
       hash: hash,
       createdAt: new Date().toISOString()
     };
     accountsData.users[lowerUser] = user;
     isNew = true;
-    console.log(`[Auth] Utworzono nowe konto: ${cleanUser}`);
+    console.log(`[Auth] Utworzono nowe konto: ${cleanUser} (E-mail: ${user.email || 'brak'})`);
   } else {
     // Logowanie do istniejącego konta
     const testHash = hashPassword(password, user.salt);
-    if (testHash !== user.hash) {
+    if (!timingSafeEqualStr(testHash, user.hash)) {
       return { error: 'Nieprawidłowe hasło dla tego konta' };
+    }
+    // Zapisz e-mail jeśli użytkownik podał go przy logowaniu, a konto jeszcze go nie miało
+    if (email && !user.email && typeof email === 'string' && email.includes('@')) {
+      user.email = email.trim().toLowerCase();
     }
     console.log(`[Auth] Zalogowano pomyślnie: ${user.displayName}`);
   }
@@ -104,6 +237,7 @@ function authenticateOrRegister(username, password) {
     success: true,
     token: token,
     username: user.displayName,
+    email: user.email || '',
     isNew: isNew
   };
 }
@@ -134,10 +268,15 @@ function readJsonBody(req, callback) {
 const server = http.createServer((req, res) => {
   let reqUrl = req.url.split('?')[0];
 
-  // Nagłówki CORS
+  // --- Zabezpieczenia: Nagłówki Ochronne (Security Headers) ---
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -147,13 +286,20 @@ const server = http.createServer((req, res) => {
 
   // --- API Autoryzacji Kont ---
   if (reqUrl === '/api/auth/login' && req.method === 'POST') {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    if (!checkRateLimit('login_' + ip, 15, 15 * 60 * 1000)) {
+      res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'Zbyt wiele prób logowania. Odczekaj 15 minut.' }));
+      return;
+    }
+
     readJsonBody(req, (err, data) => {
       if (err) {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ error: 'Nieprawidłowy format JSON' }));
         return;
       }
-      const result = authenticateOrRegister(data.username, data.password);
+      const result = authenticateOrRegister(data.username, data.password, data.email);
       if (result.error) {
         res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ error: result.error }));
@@ -165,13 +311,225 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // --- API Resetowania Hasła (Krok 1: Wysłanie 6-cyfrowego kodu na e-mail) ---
+  if (reqUrl === '/api/auth/forgot-password' && req.method === 'POST') {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    if (!checkRateLimit('forgot_' + ip, 6, 15 * 60 * 1000)) {
+      res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'Zbyt wiele prób resetowania hasła. Odczekaj 15 minut.' }));
+      return;
+    }
+
+    readJsonBody(req, async (err, data) => {
+      if (err || !data.identifier) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Podaj login lub adres e-mail konta' }));
+        return;
+      }
+
+      const id = data.identifier.trim().toLowerCase();
+      let foundUser = null;
+
+      // Szukaj po loginie lub adresie e-mail
+      if (accountsData.users[id]) {
+        foundUser = accountsData.users[id];
+      } else {
+        for (const u of Object.values(accountsData.users)) {
+          if (u.email && u.email.toLowerCase() === id) {
+            foundUser = u;
+            break;
+          }
+        }
+      }
+
+      if (!foundUser) {
+        res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Nie znaleziono konta o podanym loginie lub e-mailu' }));
+        return;
+      }
+
+      let targetEmail = foundUser.email;
+      // Jeśli konto nie miało przypisanego e-maila, a użytkownik podał go teraz w formularzu
+      if (!targetEmail && data.email && data.email.includes('@')) {
+        targetEmail = data.email.trim().toLowerCase();
+        foundUser.email = targetEmail;
+        saveAccounts();
+      }
+
+      if (!targetEmail) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          error: 'Do tego konta nie przypisano jeszcze adresu e-mail. Podaj swój e-mail, aby otrzymać kod.',
+          requiresEmail: true,
+          username: foundUser.displayName
+        }));
+        return;
+      }
+
+      // Wygeneruj 6-cyfrowy kod weryfikacyjny (ważny 15 minut)
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      accountsData.resetCodes[foundUser.username] = {
+        code: code,
+        expiresAt: Date.now() + 15 * 60 * 1000,
+        attempts: 0
+      };
+      saveAccounts();
+
+      const mailResult = await sendResetEmail(targetEmail, code, foundUser.displayName);
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: true,
+        username: foundUser.displayName,
+        maskedEmail: maskEmail(targetEmail),
+        simulated: mailResult.simulated || false,
+        debugCode: mailResult.debugCode || null,
+        message: mailResult.message || `Kod weryfikacyjny został wysłany na adres ${maskEmail(targetEmail)}`
+      }));
+    });
+    return;
+  }
+
+  // --- API Resetowania Hasła (Krok 2: Weryfikacja kodu i zapisanie NOWEGO HASŁA) ---
+  if (reqUrl === '/api/auth/reset-password' && req.method === 'POST') {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    if (!checkRateLimit('reset_' + ip, 6, 15 * 60 * 1000)) {
+      res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'Zbyt wiele prób. Odczekaj 15 minut.' }));
+      return;
+    }
+
+    readJsonBody(req, (err, data) => {
+      if (err || !data.username || !data.code || !data.newPassword) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Podaj nazwę użytkownika, kod z e-maila oraz nowe hasło' }));
+        return;
+      }
+
+      const lowerUser = data.username.trim().toLowerCase();
+      const code = data.code.trim();
+      const newPassword = data.newPassword.trim();
+
+      if (newPassword.length < 3) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Nowe hasło musi mieć co najmniej 3 znaki' }));
+        return;
+      }
+
+      const resetInfo = accountsData.resetCodes[lowerUser];
+      if (!resetInfo) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Brak aktywnego wniosku o reset hasła lub kod wygasł. Wygeneruj nowy kod.' }));
+        return;
+      }
+
+      if (Date.now() > resetInfo.expiresAt) {
+        delete accountsData.resetCodes[lowerUser];
+        saveAccounts();
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Kod weryfikacyjny wygasł (ważny 15 minut). Wygeneruj nowy kod.' }));
+        return;
+      }
+
+      if (!timingSafeEqualStr(resetInfo.code, code)) {
+        resetInfo.attempts = (resetInfo.attempts || 0) + 1;
+        if (resetInfo.attempts >= 5) {
+          delete accountsData.resetCodes[lowerUser];
+          saveAccounts();
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'Zbyt wiele błędnych prób. Wniosek anulowany – wygeneruj nowy kod.' }));
+          return;
+        }
+        saveAccounts();
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: `Nieprawidłowy kod weryfikacyjny. Pozostało prób: ${5 - resetInfo.attempts}` }));
+        return;
+      }
+
+      // Kod poprawny - zapisujemy NOWE HASŁO
+      const user = accountsData.users[lowerUser];
+      if (!user) {
+        res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Nie znaleziono konta' }));
+        return;
+      }
+
+      const newSalt = crypto.randomBytes(16).toString('hex');
+      const newHash = hashPassword(newPassword, newSalt);
+
+      user.salt = newSalt;
+      user.hash = newHash;
+      user.updatedAt = new Date().toISOString();
+
+      delete accountsData.resetCodes[lowerUser];
+
+      // Unieważnij wszystkie stare tokeny dla bezpieczeństwa
+      for (const [t, info] of Object.entries(accountsData.tokens)) {
+        if (info.username === lowerUser) {
+          delete accountsData.tokens[t];
+        }
+      }
+
+      // Wygeneruj nowy token sesji
+      const newToken = crypto.randomBytes(24).toString('hex');
+      accountsData.tokens[newToken] = {
+        username: lowerUser,
+        createdAt: new Date().toISOString()
+      };
+      saveAccounts();
+
+      console.log(`[Auth] ✅ Zresetowano i zapisano nowe hasło dla konta: ${user.displayName}`);
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: true,
+        token: newToken,
+        username: user.displayName,
+        email: user.email || '',
+        message: 'Hasło zostało pomyślnie zmienione! Zalogowano na nowe dane.'
+      }));
+    });
+    return;
+  }
+
+  // --- API Aktualizacji Adresu E-mail konta ---
+  if (reqUrl === '/api/auth/update-email' && req.method === 'POST') {
+    readJsonBody(req, (err, data) => {
+      if (err || !data.token || !data.email) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Podaj poprawny adres e-mail' }));
+        return;
+      }
+      const user = getUserByToken(data.token);
+      if (!user) {
+        res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Brak autoryzacji' }));
+        return;
+      }
+
+      const cleanEmail = data.email.trim().toLowerCase();
+      if (!cleanEmail.includes('@') || cleanEmail.length < 5) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Nieprawidłowy format adresu e-mail' }));
+        return;
+      }
+
+      user.email = cleanEmail;
+      saveAccounts();
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true, email: cleanEmail }));
+    });
+    return;
+  }
+
   if (reqUrl === '/api/auth/me') {
     const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
     const token = parsedUrl.searchParams.get('token') || (req.headers.authorization ? req.headers.authorization.replace('Bearer ', '') : '');
     const user = getUserByToken(token);
     if (user) {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ authenticated: true, username: user.displayName }));
+      res.end(JSON.stringify({ authenticated: true, username: user.displayName, email: user.email || '' }));
     } else {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ authenticated: false }));

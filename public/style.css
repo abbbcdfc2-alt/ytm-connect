@@ -1215,3 +1215,103 @@ body {
 .btn-account-logout:hover {
   background: rgba(255, 68, 68, 0.28);
 }
+
+
+.auth-actions-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.auth-text-btn {
+  background: transparent;
+  border: none;
+  color: #1db954;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 4px 8px;
+  transition: color 0.15s ease;
+}
+
+.auth-text-btn:hover {
+  color: #1ed760;
+  text-decoration: underline;
+}
+
+.auth-success-badge {
+  background: rgba(29, 185, 84, 0.15);
+  border: 1px solid #1db954;
+  color: #1db954;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  text-align: center;
+  margin-bottom: 14px;
+}
+
+.code-input {
+  font-size: 20px !important;
+  font-weight: 700 !important;
+  letter-spacing: 8px !important;
+  text-align: center !important;
+}
+
+/* E-mail w oknie ustawień */
+.account-email-box {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.account-email-box label {
+  font-size: 11px;
+  color: #aaa;
+  text-transform: uppercase;
+}
+
+.input-with-action {
+  display: flex;
+  gap: 8px;
+}
+
+.input-with-action input {
+  flex: 1;
+  background: #181818;
+  border: 1px solid #383838;
+  color: #fff;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+.btn-action-small {
+  background: #1db954;
+  color: #000;
+  border: none;
+  font-weight: 700;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn-action-small:hover {
+  background: #1ed760;
+}
+
+.email-status-text {
+  font-size: 11px;
+  min-height: 14px;
+}
+
+.email-status-text.success {
+  color: #1db954;
+}
+
+.email-status-text.error {
+  color: #ff5555;
+}

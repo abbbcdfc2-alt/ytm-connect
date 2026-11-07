@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>YTM Connect</title>
   <meta name="theme-color" content="#121212">
-  <link rel="stylesheet" href="style.css?v=1.4.1">
+  <link rel="stylesheet" href="style.css?v=1.4.2">
 </head>
 <body>
   <!-- Ambientny blur w tle na bazie aktualnej okładki -->
@@ -187,6 +187,14 @@
             </div>
             <button id="logoutBtn" class="btn-account-logout">Wyloguj</button>
           </div>
+          <div class="account-email-box">
+            <label for="settingsEmailInput">E-mail do resetu hasła:</label>
+            <div class="input-with-action">
+              <input type="email" id="settingsEmailInput" placeholder="twoj-email@gmail.com" autocomplete="email">
+              <button id="saveEmailBtn" class="btn-action-small">Zapisz</button>
+            </div>
+            <span class="email-status-text" id="emailStatusText"></span>
+          </div>
         </div>
         
         <label for="roomInput">Kod pokoju / PIN:</label>
@@ -215,12 +223,13 @@
     </div>
   </div>
 
-  <!-- Ekran Logowania / Rejestracji Konta -->
+  <!-- Ekran Logowania, Rejestracji oraz Resetowania Hasła (Z kodem na mail) -->
   <div class="auth-overlay hidden" id="authOverlay">
-    <div class="auth-card">
+    <!-- Widok 1: Logowanie / Rejestracja -->
+    <div class="auth-card" id="authLoginCard">
       <div class="auth-logo">🎵</div>
       <h2 class="auth-title">YTM Connect</h2>
-      <p class="auth-subtitle">Zaloguj się, aby połączyć aplikację z komputerem</p>
+      <p class="auth-subtitle">Zaloguj się lub utwórz nowe konto</p>
 
       <div class="auth-error hidden" id="authError"></div>
 
@@ -234,11 +243,76 @@
         <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password">
       </div>
 
+      <div class="auth-form-group">
+        <label for="authEmail">Adres E-mail <span style="color:#777;font-weight:normal;">(opcjonalny, do resetu hasła)</span></label>
+        <input type="email" id="authEmail" placeholder="twoj-email@gmail.com" autocomplete="email">
+      </div>
+
       <button id="authSubmitBtn" class="auth-submit-btn">Zaloguj / Utwórz konto</button>
+
+      <div class="auth-actions-row">
+        <button type="button" class="auth-text-btn" id="openForgotBtn">Nie pamiętasz hasła? Zresetuj</button>
+      </div>
 
       <p class="auth-hint">
         Wpisz nazwę konta i hasło. Jeśli konto jeszcze nie istnieje, zostanie automatycznie utworzone. Zaloguj się tymi samymi danymi w rozszerzeniu na komputerze!
       </p>
+    </div>
+
+    <!-- Widok 2: Reset Hasła - Krok 1 (Wysłanie Kodu na E-mail) -->
+    <div class="auth-card hidden" id="authForgotStep1Card">
+      <div class="auth-logo">✉️</div>
+      <h2 class="auth-title">Reset hasła</h2>
+      <p class="auth-subtitle">Podaj swój login lub e-mail powiązany z kontem. Wyślemy Ci 6-cyfrowy kod weryfikacyjny.</p>
+
+      <div class="auth-error hidden" id="forgotStep1Error"></div>
+
+      <div class="auth-form-group">
+        <label for="forgotIdentifierInput">Login lub Adres E-mail</label>
+        <input type="text" id="forgotIdentifierInput" placeholder="login lub email..." autocomplete="username email" spellcheck="false" autocapitalize="none">
+      </div>
+
+      <div class="auth-form-group hidden" id="forgotExtraEmailGroup">
+        <label for="forgotExtraEmailInput">Adres E-mail (do powiązania z kontem)</label>
+        <input type="email" id="forgotExtraEmailInput" placeholder="twoj-email@gmail.com" autocomplete="email">
+      </div>
+
+      <button id="sendResetCodeBtn" class="auth-submit-btn">Wyślij kod weryfikacyjny</button>
+
+      <div class="auth-actions-row">
+        <button type="button" class="auth-text-btn" id="cancelForgotBtn1">← Wróć do logowania</button>
+      </div>
+    </div>
+
+    <!-- Widok 3: Reset Hasła - Krok 2 (Wpisanie Kodu i Zapis Nowego Hasła) -->
+    <div class="auth-card hidden" id="authForgotStep2Card">
+      <div class="auth-logo">🔑</div>
+      <h2 class="auth-title">Nowe hasło</h2>
+      <p class="auth-subtitle">Wpisz 6-cyfrowy kod z e-maila oraz nowe hasło do swojego konta.</p>
+
+      <div class="auth-success-badge hidden" id="forgotSuccessInfo"></div>
+      <div class="auth-error hidden" id="forgotStep2Error"></div>
+
+      <div class="auth-form-group">
+        <label for="resetCodeInput">6-cyfrowy kod weryfikacyjny</label>
+        <input type="text" id="resetCodeInput" class="code-input" placeholder="123456" maxlength="6" autocomplete="one-time-code" pattern="[0-9]*" inputmode="numeric">
+      </div>
+
+      <div class="auth-form-group">
+        <label for="resetNewPasswordInput">Nowe hasło</label>
+        <input type="password" id="resetNewPasswordInput" placeholder="••••••••" autocomplete="new-password">
+      </div>
+
+      <div class="auth-form-group">
+        <label for="resetConfirmPasswordInput">Powtórz nowe hasło</label>
+        <input type="password" id="resetConfirmPasswordInput" placeholder="••••••••" autocomplete="new-password">
+      </div>
+
+      <button id="submitNewPasswordBtn" class="auth-submit-btn">Zapisz nowe hasło i zaloguj</button>
+
+      <div class="auth-actions-row">
+        <button type="button" class="auth-text-btn" id="cancelForgotBtn2">← Wróć do logowania</button>
+      </div>
     </div>
   </div>
 
@@ -280,6 +354,6 @@
   </div>
 
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="client.js?v=1.4.1"></script>
+  <script src="client.js?v=1.4.2"></script>
 </body>
 </html>
