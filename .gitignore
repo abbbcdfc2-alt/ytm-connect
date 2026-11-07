@@ -1,7 +1,42 @@
-# Pliki z kontami i prywatnymi danymi użytkowników
-accounts.json
-.data/
-*.log
-.env
-node_modules/
+# ==========================================
+# YTM Connect - Ochrona Danych Wrażliwych
+# ==========================================
 
+# 1. Baza kont i prywatne dane użytkowników
+accounts.json
+*/accounts.json
+*.accounts.json
+.data/
+*/.data/
+*.db
+*.sqlite
+*.sqlite3
+
+# 2. Klucze, hasła, tokeny i zmienne środowiskowe
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.cert
+*.crt
+secrets/
+credentials/
+
+# 3. Logi i pliki historii debugowania
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 4. Zależności i pliki tymczasowe
+node_modules/
+.cache/
+.temp/
+tmp/
+
+# 5. Pliki systemowe i edytorów kodu
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

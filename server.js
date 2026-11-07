@@ -207,16 +207,21 @@ function authenticateOrRegister(username, password, email) {
       email: (email && typeof email === 'string' && email.includes('@')) ? email.trim().toLowerCase() : '',
       salt: salt,
       hash: hash,
+      reauthKey: crypto.randomBytes(32).toString('hex'),
       createdAt: new Date().toISOString()
     };
     accountsData.users[lowerUser] = user;
     isNew = true;
-    console.log(`[Auth] Utworzono nowe konto: ${cleanUser} (E-mail: ${user.email || 'brak'})`);
+    console.log(`[Auth] Utworzono nowe konto: ${cleanUser}`);
   } else {
     // Logowanie do istniejącego konta
     const testHash = hashPassword(password, user.salt);
     if (!timingSafeEqualStr(testHash, user.hash)) {
       return { error: 'Nieprawidłowe hasło dla tego konta' };
+    }
+    // Wygeneruj unikalny klucz reautoryzacji jeśli konto jeszcze go nie miało
+    if (!user.reauthKey) {
+      user.reauthKey = crypto.randomBytes(32).toString('hex');
     }
     // Zapisz e-mail jeśli użytkownik podał go przy logowaniu, a konto jeszcze go nie miało
     if (email && !user.email && typeof email === 'string' && email.includes('@')) {
@@ -238,7 +243,7 @@ function authenticateOrRegister(username, password, email) {
     token: token,
     username: user.displayName,
     email: user.email || '',
-    userHash: user.hash,
+    reauthKey: user.reauthKey,
     isNew: isNew
   };
 }
@@ -383,9 +388,7 @@ const server = http.createServer((req, res) => {
         success: true,
         username: foundUser.displayName,
         maskedEmail: maskEmail(targetEmail),
-        simulated: mailResult.simulated || false,
-        debugCode: mailResult.debugCode || null,
-        message: mailResult.message || `Kod weryfikacyjny został wysłany na adres ${maskEmail(targetEmail)}`
+        message: `Kod weryfikacyjny został wysłany na Twój adres e-mail (${maskEmail(targetEmail)}). Sprawdź skrzynkę pocztową.`
       }));
     });
     return;
@@ -460,6 +463,7 @@ const server = http.createServer((req, res) => {
 
       user.salt = newSalt;
       user.hash = newHash;
+      user.reauthKey = crypto.randomBytes(32).toString('hex');
       user.updatedAt = new Date().toISOString();
 
       delete accountsData.resetCodes[lowerUser];
@@ -487,7 +491,7 @@ const server = http.createServer((req, res) => {
         token: newToken,
         username: user.displayName,
         email: user.email || '',
-        userHash: user.hash,
+        reauthKey: user.reauthKey,
         message: 'Hasło zostało pomyślnie zmienione! Zalogowano na nowe dane.'
       }));
     });
@@ -497,7 +501,8 @@ const server = http.createServer((req, res) => {
   // --- API Autoryzacji Stałej Sesji (Zapamiętaj mnie - Sesja nie wygasa) ---
   if (reqUrl === '/api/auth/reauth' && req.method === 'POST') {
     readJsonBody(req, (err, data) => {
-      if (err || !data.username || !data.userHash) {
+      const clientKey = data.reauthKey || data.userHash; // kompatybilność wsteczna
+      if (err || !data.username || !clientKey) {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ authenticated: false }));
         return;
@@ -505,7 +510,12 @@ const server = http.createServer((req, res) => {
       const lower = data.username.trim().toLowerCase();
       let user = accountsData.users[lower];
 
-      if (user && timingSafeEqualStr(user.hash, data.userHash)) {
+      const keyToMatch = user ? (user.reauthKey || user.hash) : null;
+      if (user && keyToMatch && timingSafeEqualStr(keyToMatch, clientKey)) {
+        // Zaktualizuj do reauthKey jeśli konto korzystało jeszcze ze starego hasha
+        if (!user.reauthKey) {
+          user.reauthKey = crypto.randomBytes(32).toString('hex');
+        }
         const newToken = crypto.randomBytes(24).toString('hex');
         accountsData.tokens[newToken] = {
           username: lower,
@@ -519,7 +529,7 @@ const server = http.createServer((req, res) => {
           token: newToken,
           username: user.displayName,
           email: user.email || '',
-          userHash: user.hash
+          reauthKey: user.reauthKey
         }));
         return;
       }
@@ -587,14 +597,17 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // API statusu podłączonych urządzeń
+  // API statusu podłączonych urządzeń (Bezpieczny - ukrywa loginy i nazwy pokoi)
   if (reqUrl === '/api/status') {
+    let totalClients = 0;
+    for (const clientSet of rooms.values()) {
+      totalClients += clientSet.size;
+    }
     const statusData = {
       status: 'online',
-      rooms: Array.from(rooms.keys()).map(r => ({
-        room: r,
-        clients: Array.from(rooms.get(r)).map(c => ({ role: c.role, name: c.deviceName }))
-      }))
+      version: '1.4.0',
+      activeRooms: rooms.size,
+      activeConnections: totalClients
     };
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
@@ -630,23 +643,40 @@ const server = http.createServer((req, res) => {
   if (reqUrl === '/') reqUrl = '/index.html';
 
   const publicDir = path.resolve(__dirname, 'public');
-  // Bezpieczne rozwiązanie ścieżki i blokada directory traversal
   const safePath = path.resolve(publicDir, '.' + reqUrl);
+  const ext = path.extname(safePath).toLowerCase();
 
-  // Bezwzględna ochrona prywatności kont: blokuj próby dostępu do bazy kont lub plików poza katalogiem public/
-  if (
+  const allowedExtensions = new Set([
+    '.html', '.js', '.css', '.png', '.jpg', '.jpeg', '.svg', '.apk', '.ico', '.webp'
+  ]);
+
+  // Bezwzględna ochrona danych wrażliwych:
+  // 1. Ścieżka musi ściśle należeć do katalogu public/
+  // 2. Blokada plików ukrytych (.env, .data, .git)
+  // 3. Blokada baz kont, logów, kodów źródłowych i konfiguracji
+  // 4. Dozwolone wyłącznie bezpieczne pliki z białej listy rozszerzeń
+  const lowerUrl = reqUrl.toLowerCase();
+  const isForbidden = (
     !safePath.startsWith(publicDir) ||
-    reqUrl.toLowerCase().includes('accounts') ||
-    safePath.toLowerCase().includes('accounts') ||
-    safePath.toLowerCase().includes('.data')
-  ) {
+    !allowedExtensions.has(ext) ||
+    lowerUrl.includes('.env') ||
+    lowerUrl.includes('.git') ||
+    lowerUrl.includes('.data') ||
+    lowerUrl.includes('accounts') ||
+    lowerUrl.includes('package') ||
+    lowerUrl.includes('server') ||
+    lowerUrl.endsWith('.json') ||
+    lowerUrl.endsWith('.log') ||
+    lowerUrl.endsWith('.md')
+  );
+
+  if (isForbidden) {
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('403 Forbidden - Dostęp zabroniony');
     return;
   }
 
   const filePath = safePath;
-  const ext = path.extname(filePath);
 
   const mimeTypes = {
     '.html': 'text/html; charset=utf-8',

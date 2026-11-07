@@ -1320,13 +1320,13 @@
     if (!config.token) {
       const rem = localStorage.getItem('ytm_remember_me') === 'true';
       const remUser = localStorage.getItem('ytm_username');
-      const remHash = localStorage.getItem('ytm_user_hash');
-      if (rem && remUser && remHash) {
+      const remKey = localStorage.getItem('ytm_reauth_key') || localStorage.getItem('ytm_user_hash');
+      if (rem && remUser && remKey) {
         // Cicha stała reautoryzacja (sesja nie wygasa)
         fetch('/api/auth/reauth', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: remUser, userHash: remHash })
+          body: JSON.stringify({ username: remUser, reauthKey: remKey, userHash: remKey })
         })
         .then(r => r.json())
         .then(data => {
@@ -1334,6 +1334,10 @@
             config.token = data.token;
             config.username = data.username;
             localStorage.setItem('ytm_token', data.token);
+            if (data.reauthKey) {
+              localStorage.setItem('ytm_reauth_key', data.reauthKey);
+              localStorage.removeItem('ytm_user_hash');
+            }
             if (data.email) {
               localStorage.setItem('ytm_email', data.email);
               if (settingsEmailInput) settingsEmailInput.value = data.email;
@@ -1428,11 +1432,7 @@
         switchAuthView('step2');
 
         if (forgotSuccessInfo) {
-          let msgText = data.message || `Kod wysłany na Twój adres e-mail!`;
-          if (data.debugCode) {
-            msgText += ` (Kod weryfikacyjny: ${data.debugCode})`;
-          }
-          forgotSuccessInfo.textContent = msgText;
+          forgotSuccessInfo.textContent = data.message || `Kod weryfikacyjny wysłany! Sprawdź swoją skrzynkę e-mail.`;
           forgotSuccessInfo.classList.remove('hidden');
         }
 
@@ -1508,7 +1508,10 @@
         localStorage.setItem('ytm_token', data.token);
         localStorage.setItem('ytm_username', data.username);
         localStorage.setItem('ytm_remember_me', 'true');
-        if (data.userHash) localStorage.setItem('ytm_user_hash', data.userHash);
+        if (data.reauthKey) {
+          localStorage.setItem('ytm_reauth_key', data.reauthKey);
+          localStorage.removeItem('ytm_user_hash');
+        }
 
         if (accountUsername) accountUsername.textContent = data.username;
         if (authOverlay) authOverlay.classList.add('hidden');
@@ -1624,9 +1627,13 @@
 
         if (rem) {
           localStorage.setItem('ytm_remember_me', 'true');
-          if (data.userHash) localStorage.setItem('ytm_user_hash', data.userHash);
+          if (data.reauthKey) {
+            localStorage.setItem('ytm_reauth_key', data.reauthKey);
+            localStorage.removeItem('ytm_user_hash');
+          }
         } else {
           localStorage.removeItem('ytm_remember_me');
+          localStorage.removeItem('ytm_reauth_key');
           localStorage.removeItem('ytm_user_hash');
         }
 
@@ -1664,6 +1671,7 @@
       localStorage.removeItem('ytm_token');
       localStorage.removeItem('ytm_username');
       localStorage.removeItem('ytm_remember_me');
+      localStorage.removeItem('ytm_reauth_key');
       localStorage.removeItem('ytm_user_hash');
 
       if (settingsModal) settingsModal.classList.add('hidden');
