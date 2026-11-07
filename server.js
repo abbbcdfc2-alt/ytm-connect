@@ -221,60 +221,98 @@ function broadcastRoomInfo(roomName) {
 }
 
 function getYTMSuggestions(query, callback) {
-  const postData = JSON.stringify({
+  const postDataSuggest = JSON.stringify({
     context: { client: { clientName: 'WEB_REMIX', clientVersion: '1.20231204.01.00', hl: 'pl', gl: 'PL' } },
     input: query
   });
+  const postDataSearch = JSON.stringify({
+    context: { client: { clientName: 'WEB_REMIX', clientVersion: '1.20231204.01.00', hl: 'pl', gl: 'PL' } },
+    query: query
+  });
 
-  const req = https.request('https://music.youtube.com/youtubei/v1/music/get_search_suggestions?prettyPrint=false', {
+  let queries = [];
+  let songs = [];
+  let pending = 2;
+
+  const done = () => {
+    pending--;
+    if (pending === 0) {
+      const seen = new Set();
+      const uniqueSongs = songs.filter(s => {
+        if (!s.videoId || seen.has(s.videoId)) return false;
+        seen.add(s.videoId);
+        return true;
+      });
+      callback({ queries, songs: uniqueSongs });
+    }
+  };
+
+  // 1. Podpowiedzi tekstowe
+  const req1 = https.request('https://music.youtube.com/youtubei/v1/music/get_search_suggestions?prettyPrint=false', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer': 'https://music.youtube.com/'
-    },
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
     timeout: 3000
-  }, (upstreamRes) => {
-    let data = '';
-    upstreamRes.on('data', chunk => data += chunk);
-    upstreamRes.on('end', () => {
+  }, (res) => {
+    let d = '';
+    res.on('data', c => d += c);
+    res.on('end', () => {
       try {
-        const json = JSON.parse(data);
-        const queries = [];
-        const songs = [];
+        const json = JSON.parse(d);
         for (const c of json.contents || []) {
           for (const item of (c.searchSuggestionsSectionRenderer?.contents || [])) {
             if (item.searchSuggestionRenderer) {
               const text = item.searchSuggestionRenderer.suggestion?.runs?.map(r => r.text).join('') || '';
               if (text) queries.push(text);
-            } else if (item.musicResponsiveListItemRenderer) {
-              const r = item.musicResponsiveListItemRenderer;
-              const title = r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map(x => x.text).join('') || '';
-              const subtitle = r.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map(x => x.text).join('') || '';
-              const thumb = r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.[0]?.url || '';
-              const videoId = r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.navigationEndpoint?.watchEndpoint?.videoId ||
-                              r.playlistItemData?.videoId || '';
-              if (title) {
-                songs.push({ title, subtitle, thumb, videoId });
-              }
             }
           }
         }
-        if (queries.length > 0 || songs.length > 0) {
-          return callback({ queries, songs });
-        }
-      } catch (e) {}
-      fallbackGoogleSuggest(query, callback);
+      } catch(e) {}
+      done();
     });
   });
+  req1.on('error', done);
+  req1.on('timeout', () => { req1.destroy(); done(); });
+  req1.write(postDataSuggest);
+  req1.end();
 
-  req.on('error', () => fallbackGoogleSuggest(query, callback));
-  req.on('timeout', () => {
-    req.destroy();
-    fallbackGoogleSuggest(query, callback);
+  // 2. Pełne wyniki wyszukiwania (dokładne utwory z okładkami i videoId)
+  const req2 = https.request('https://music.youtube.com/youtubei/v1/search?prettyPrint=false', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    timeout: 3000
+  }, (res) => {
+    let d = '';
+    res.on('data', c => d += c);
+    res.on('end', () => {
+      try {
+        const json = JSON.parse(d);
+        function findItems(obj) {
+          if (!obj || typeof obj !== 'object') return;
+          if (obj.musicResponsiveListItemRenderer) {
+            const r = obj.musicResponsiveListItemRenderer;
+            const title = r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map(x => x.text).join('') || '';
+            const subtitle = r.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map(x => x.text).join('') || '';
+            const thumb = r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.[0]?.url || '';
+            const videoId = r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.navigationEndpoint?.watchEndpoint?.videoId ||
+                            r.playlistItemData?.videoId ||
+                            r.navigationEndpoint?.watchEndpoint?.videoId || '';
+            if (title && videoId) {
+              songs.push({ title, subtitle, thumb, videoId });
+            }
+          }
+          for (const k of Object.keys(obj)) {
+            findItems(obj[k]);
+          }
+        }
+        findItems(json);
+      } catch(e) {}
+      done();
+    });
   });
-  req.write(postData);
-  req.end();
+  req2.on('error', done);
+  req2.on('timeout', () => { req2.destroy(); done(); });
+  req2.write(postDataSearch);
+  req2.end();
 }
 
 function fallbackGoogleSuggest(query, callback) {
