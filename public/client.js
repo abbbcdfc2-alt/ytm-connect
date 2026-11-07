@@ -1310,6 +1310,10 @@
     queueBackdrop.classList.add('visible');
     isQueueSheetOpen = true;
 
+    if (targetDevice === 'desktop') {
+      sendCommand('request_state');
+    }
+
     // Przewiń płynnie do aktualnie odtwarzanego utworu
     setTimeout(() => {
       const playingEl = queueList.querySelector('.queue-item.playing');
