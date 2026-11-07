@@ -358,7 +358,23 @@
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   }
 
+  let reconnectTimer = null;
+
   function connect() {
+    clearTimeout(reconnectTimer);
+
+    // Jeśli połączenie już istnieje, zamknij je przed otwarciem nowego (zapobiega zdublowanym socketom!)
+    if (ws) {
+      try {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        ws.close();
+      } catch (e) {}
+      ws = null;
+    }
+
     let wsHost = window.location.host || 'ytm-connect.onrender.com';
     let wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
@@ -378,7 +394,8 @@
       ws = new WebSocket(wsUrl);
     } catch (e) {
       updateStatus('disconnected', 'Błąd połączenia');
-      setTimeout(connect, 3000);
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connect, 3000);
       return;
     }
 
@@ -407,7 +424,8 @@
     ws.onclose = () => {
       stopHeartbeat();
       updateStatus('disconnected', 'Rozłączono. Ponawianie za 3s...');
-      setTimeout(connect, 3000);
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connect, 3000);
     };
 
     ws.onerror = () => {
@@ -695,8 +713,24 @@
     }
   });
 
-  // --- Kontrolki odtwarzacza ---
-  playBtn.addEventListener('click', () => {
+  function guardButtonClick(btn, handler, cooldownMs = 500) {
+    if (!btn) return;
+    let lastTime = 0;
+    btn.addEventListener('click', (e) => {
+      const now = Date.now();
+      if (now - lastTime < cooldownMs) {
+        console.log(`[Pilot] Zablokowano podwójne kliknięcie (${now - lastTime}ms)`);
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      lastTime = now;
+      handler(e);
+    });
+  }
+
+  // --- Kontrolki odtwarzacza (zabezpieczone guardButtonClick przed podwójnym kliknięciem) ---
+  guardButtonClick(playBtn, () => {
     if (targetDevice === 'desktop') {
       if (currentState.isPlaying) {
         sendCommandDebounced('pause');
@@ -718,44 +752,44 @@
       // Ten telefon
       phoneToggle();
     }
-  });
+  }, 500);
 
   if (likeBtn) {
-    likeBtn.addEventListener('click', () => {
+    guardButtonClick(likeBtn, () => {
       const nextStatus = (currentState.likeStatus === 'LIKE') ? 'INDIFFERENT' : 'LIKE';
       currentState.likeStatus = nextStatus;
       updateLikeButtonsUI(nextStatus);
       if (targetDevice === 'desktop') {
         sendCommandDebounced('like');
       }
-    });
+    }, 500);
   }
 
-  prevBtn.addEventListener('click', () => {
+  guardButtonClick(prevBtn, () => {
     if (targetDevice === 'desktop') {
       sendCommandDebounced('prev');
     } else {
       phoneSeek(0);
     }
-  });
+  }, 500);
 
-  nextBtn.addEventListener('click', () => {
+  guardButtonClick(nextBtn, () => {
     if (targetDevice === 'desktop') {
       sendCommandDebounced('next');
     } else {
       phoneSeek(currentState.duration || 0);
     }
-  });
+  }, 500);
 
   if (dislikeBtn) {
-    dislikeBtn.addEventListener('click', () => {
+    guardButtonClick(dislikeBtn, () => {
       const nextStatus = (currentState.likeStatus === 'DISLIKE') ? 'INDIFFERENT' : 'DISLIKE';
       currentState.likeStatus = nextStatus;
       updateLikeButtonsUI(nextStatus);
       if (targetDevice === 'desktop') {
         sendCommandDebounced('dislike');
       }
-    });
+    }, 500);
   }
 
   // Przewijanie utworu
@@ -1232,8 +1266,16 @@
 
   let pendingQueueClick = null;
   let pendingQueueTimer = null;
+  let lastQueueItemClickTime = 0;
 
   function playQueueItem(index) {
+    const now = Date.now();
+    if (now - lastQueueItemClickTime < 500) {
+      console.log('[Pilot] Zignorowano podwójne kliknięcie utworu w kolejce');
+      return;
+    }
+    lastQueueItemClickTime = now;
+
     const item = currentQueue[index];
     if (!item) return;
 

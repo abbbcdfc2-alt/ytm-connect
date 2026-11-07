@@ -5,6 +5,12 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+button, .control-btn, .device-btn, .queue-item, .search-item, .rate-btn, .header-icon-btn {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background-color: #0d0d0d;
