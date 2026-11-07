@@ -350,6 +350,8 @@
 
   let currentQueue = [];
   let isQueueSheetOpen = false;
+  let pendingPlayPauseLock = null;
+  let pendingLikeLock = null;
 
   function formatTime(seconds) {
     if (isNaN(seconds) || seconds < 0) return '0:00';
@@ -565,7 +567,20 @@
       currentState.duration = dur;
       currentState.currentTime = cur;
 
-      if (state.isPlaying) {
+      // 1. Ochrona przed cofaniem stanu odtwarzania przez przeterminowane pakiety w sieci
+      let effectiveIsPlaying = state.isPlaying;
+      if (pendingPlayPauseLock) {
+        if (state.isPlaying === pendingPlayPauseLock.targetIsPlaying) {
+          pendingPlayPauseLock = null;
+        } else if (Date.now() - pendingPlayPauseLock.time > 2000) {
+          pendingPlayPauseLock = null;
+        } else {
+          effectiveIsPlaying = pendingPlayPauseLock.targetIsPlaying;
+        }
+      }
+      currentState.isPlaying = effectiveIsPlaying;
+
+      if (effectiveIsPlaying) {
         playIcon.classList.add('hidden');
         pauseIcon.classList.remove('hidden');
         startLocalProgress();
@@ -583,9 +598,21 @@
         volumeSlider.value = state.volume;
       }
 
-      if (typeof state.likeStatus === 'string') {
-        currentState.likeStatus = state.likeStatus;
-        updateLikeButtonsUI(state.likeStatus);
+      // 2. Ochrona przed cofaniem stanu Like/Dislike przez pakiety w sieci
+      let effectiveLikeStatus = state.likeStatus;
+      if (pendingLikeLock) {
+        if (state.likeStatus === pendingLikeLock.targetStatus) {
+          pendingLikeLock = null;
+        } else if (Date.now() - pendingLikeLock.time > 2000) {
+          pendingLikeLock = null;
+        } else {
+          effectiveLikeStatus = pendingLikeLock.targetStatus;
+        }
+      }
+
+      if (typeof effectiveLikeStatus === 'string') {
+        currentState.likeStatus = effectiveLikeStatus;
+        updateLikeButtonsUI(effectiveLikeStatus);
       } else if (!state.title || state.title.includes('Brak')) {
         updateLikeButtonsUI('INDIFFERENT');
       }
@@ -732,21 +759,24 @@
   // --- Kontrolki odtwarzacza (zabezpieczone guardButtonClick przed podwójnym kliknięciem) ---
   guardButtonClick(playBtn, () => {
     if (targetDevice === 'desktop') {
-      if (currentState.isPlaying) {
+      const willPlay = !currentState.isPlaying;
+      pendingPlayPauseLock = { targetIsPlaying: willPlay, time: Date.now() };
+      currentState.isPlaying = willPlay;
+
+      if (!willPlay) {
         sendCommandDebounced('pause');
-        currentState.isPlaying = false;
         playIcon.classList.remove('hidden');
         pauseIcon.classList.add('hidden');
+        stopLocalProgress();
       } else {
-        // Jeśli na PC nic nie gra, a użytkownik wybrał piosenkę z listy
         if ((!currentState.title || currentState.title.includes('Brak')) && selectedSong) {
           playBySong(selectedSong);
         } else {
           sendCommandDebounced('play');
         }
-        currentState.isPlaying = true;
         playIcon.classList.add('hidden');
         pauseIcon.classList.remove('hidden');
+        startLocalProgress();
       }
     } else {
       // Ten telefon
@@ -757,6 +787,7 @@
   if (likeBtn) {
     guardButtonClick(likeBtn, () => {
       const nextStatus = (currentState.likeStatus === 'LIKE') ? 'INDIFFERENT' : 'LIKE';
+      pendingLikeLock = { targetStatus: nextStatus, time: Date.now() };
       currentState.likeStatus = nextStatus;
       updateLikeButtonsUI(nextStatus);
       if (targetDevice === 'desktop') {
@@ -784,6 +815,7 @@
   if (dislikeBtn) {
     guardButtonClick(dislikeBtn, () => {
       const nextStatus = (currentState.likeStatus === 'DISLIKE') ? 'INDIFFERENT' : 'DISLIKE';
+      pendingLikeLock = { targetStatus: nextStatus, time: Date.now() };
       currentState.likeStatus = nextStatus;
       updateLikeButtonsUI(nextStatus);
       if (targetDevice === 'desktop') {
