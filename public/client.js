@@ -458,6 +458,16 @@
         btnOpenInYtmApp.classList.remove('hidden');
       }
 
+      const dur = (typeof state.duration === 'number' && isFinite(state.duration) && state.duration > 0)
+        ? Math.floor(state.duration)
+        : (currentState.duration || 0);
+      const cur = (typeof state.currentTime === 'number' && isFinite(state.currentTime) && state.currentTime >= 0)
+        ? Math.floor(state.currentTime)
+        : (currentState.currentTime || 0);
+
+      currentState.duration = dur;
+      currentState.currentTime = cur;
+
       if (state.isPlaying) {
         playIcon.classList.add('hidden');
         pauseIcon.classList.remove('hidden');
@@ -469,7 +479,7 @@
       }
 
       if (!isSeeking) {
-        updateProgressUI(state.currentTime, state.duration);
+        updateProgressUI(cur, dur);
       }
 
       if (typeof state.volume === 'number') {
@@ -487,9 +497,11 @@
       currentState.videoId = state.videoId || currentState.videoId;
     }
 
-    // Aktualizacja kolejki odtwarzania
+    // Aktualizacja kolejki odtwarzania (nie czyść jeśli kolejka chwilowo pusta przy odtwarzaniu)
     if (Array.isArray(state.queue)) {
-      updateQueue(state.queue);
+      if (state.queue.length > 0 || !state.title || state.title.includes('Brak')) {
+        updateQueue(state.queue);
+      }
     }
   }
 
