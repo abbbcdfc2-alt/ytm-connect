@@ -218,7 +218,8 @@
   const btnTargetPc = document.getElementById('btnTargetPc');
   const btnTargetPhone = document.getElementById('btnTargetPhone');
 
-  // Modal ustawień
+  // Górny pasek i przyciski
+  const refreshBtn = document.getElementById('refreshBtn');
   const settingsBtn = document.getElementById('settingsBtn');
   const settingsModal = document.getElementById('settingsModal');
   const roomInput = document.getElementById('roomInput');
@@ -226,6 +227,28 @@
   const serverInput = document.getElementById('serverInput');
   const saveModalBtn = document.getElementById('saveModalBtn');
   const cancelModalBtn = document.getElementById('cancelModalBtn');
+
+  function forceAppReload() {
+    if (window.AndroidBridge && window.AndroidBridge.forceReload) {
+      window.AndroidBridge.forceReload();
+    } else {
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.set('t', Date.now());
+        window.location.href = u.toString();
+      } catch (e) {
+        window.location.reload();
+      }
+    }
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      refreshBtn.style.transform = 'rotate(360deg)';
+      refreshBtn.style.transition = 'transform 0.4s ease';
+      setTimeout(forceAppReload, 200);
+    });
+  }
 
   // Rozsuwana kolejka odtwarzania (Bottom Sheet Drawer)
   const queueDrawerTrigger = document.getElementById('queueDrawerTrigger');
@@ -311,7 +334,16 @@
   }
 
   function handleMessage(msg) {
-    if (msg.type === 'desktop_state') {
+    if (msg.type === 'server_hello') {
+      const lastVer = localStorage.getItem('ytm_server_version');
+      if (lastVer && lastVer !== msg.version) {
+        console.log('[Pilot] Nowa wersja wdrożona na serwerze! Automatyczne odświeżanie...');
+        localStorage.setItem('ytm_server_version', msg.version);
+        setTimeout(forceAppReload, 600);
+      } else {
+        localStorage.setItem('ytm_server_version', msg.version);
+      }
+    } else if (msg.type === 'desktop_state') {
       applyDesktopState(msg.state);
     } else if (msg.type === 'room_info') {
       const desktop = msg.clients && msg.clients.find(c => c.role === 'desktop');

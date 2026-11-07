@@ -84,10 +84,17 @@ body {
   box-shadow: 0 0 6px #f5a623;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-icon-btn,
 .settings-btn {
   background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e0e0e0;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -95,9 +102,16 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.2s, transform 0.1s;
+  transition: background-color 0.2s, transform 0.15s, color 0.2s;
 }
 
+.header-icon-btn:hover,
+.settings-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.header-icon-btn:active,
 .settings-btn:active {
   transform: scale(0.92);
 }

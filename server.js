@@ -5,6 +5,7 @@ const path = require('path');
 const { WebSocketServer, WebSocket } = require('ws');
 
 const PORT = process.env.PORT || 3000;
+const SERVER_BUILD_ID = 'v1.3.2-' + Date.now();
 
 const server = http.createServer((req, res) => {
   let reqUrl = req.url.split('?')[0];
@@ -77,7 +78,9 @@ const server = http.createServer((req, res) => {
     } else {
       res.writeHead(200, {
         'Content-Type': mimeTypes[ext] || 'application/octet-stream',
-        'Cache-Control': 'no-cache, no-store, must-revalidate'
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       });
       res.end(content);
     }
@@ -92,6 +95,9 @@ wss.on('connection', (ws) => {
   ws.room = null;
   ws.role = 'unknown';
   ws.deviceName = 'Nieznane urządzenie';
+
+  // Wyślij wersję serwera do klienta (pozwala na auto-reload po wdrożeniu nowej wersji)
+  ws.send(JSON.stringify({ type: 'server_hello', version: SERVER_BUILD_ID }));
 
   ws.on('message', (rawData) => {
     try {
