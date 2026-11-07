@@ -680,11 +680,14 @@
   let lastCommandTimes = {};
   function sendCommandDebounced(action, value, cooldownMs = 350) {
     const now = Date.now();
-    if (lastCommandTimes[action] && (now - lastCommandTimes[action]) < cooldownMs) {
-      console.log(`[Pilot] Zignorowano szybkie podwójne kliknięcie: ${action} (${now - lastCommandTimes[action]}ms)`);
+    const key = (action === 'play_queue_item' && value)
+      ? `${action}_${value.index}_${value.videoId || ''}`
+      : action;
+    if (lastCommandTimes[key] && (now - lastCommandTimes[key]) < cooldownMs) {
+      console.log(`[Pilot] Zignorowano szybkie podwójne kliknięcie: ${key} (${now - lastCommandTimes[key]}ms)`);
       return;
     }
-    lastCommandTimes[action] = now;
+    lastCommandTimes[key] = now;
     sendCommand(action, value);
   }
 
