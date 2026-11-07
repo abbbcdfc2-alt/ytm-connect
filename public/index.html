@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>YTM Connect</title>
   <meta name="theme-color" content="#121212">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=1.3.0">
 </head>
 <body>
   <!-- Ambientny blur w tle na bazie aktualnej okładki -->
@@ -125,6 +125,25 @@
           <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
         </svg>
       </div>
+
+      <!-- Przycisk / belka wysuwania kolejki z dołu -->
+      <button class="queue-drawer-trigger" id="queueDrawerTrigger" title="Pokaż kolejkę odtwarzania">
+        <div class="queue-trigger-bar"></div>
+        <div class="queue-trigger-row">
+          <div class="queue-trigger-left">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
+            </svg>
+            <span>Kolejka odtwarzania</span>
+          </div>
+          <div class="queue-trigger-right">
+            <span class="queue-count-pill" id="queueTriggerCount">0</span>
+            <svg class="queue-chevron" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/>
+            </svg>
+          </div>
+        </div>
+      </button>
     </main>
 
     <!-- Modal Ustawień Pokoju i Serwera -->
@@ -149,7 +168,44 @@
     </div>
   </div>
 
+  <!-- Tło z przyciemnieniem (Backdrop dla kolejki) -->
+  <div class="queue-backdrop" id="queueBackdrop"></div>
+
+  <!-- Rozsuwana od dołu lista kolejki (Bottom Sheet) -->
+  <div class="queue-bottom-sheet" id="queueBottomSheet">
+    <div class="queue-drag-handle-wrapper" id="queueDragHandle">
+      <div class="queue-drag-pill"></div>
+    </div>
+    
+    <div class="queue-sheet-header">
+      <div class="queue-sheet-title-group">
+        <h2 class="queue-sheet-title">Kolejka odtwarzania</h2>
+        <span class="queue-sheet-count" id="queueSheetCount">0 utworów w kolejce</span>
+      </div>
+      <button class="queue-close-btn" id="queueCloseBtn" title="Zamknij kolejkę">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Przewijana lista utworów -->
+    <div class="queue-scroll-container" id="queueScrollContainer">
+      <div class="queue-list" id="queueList"></div>
+      
+      <div class="queue-empty-state hidden" id="queueEmptyState">
+        <div class="queue-empty-icon">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="#555555">
+            <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
+          </svg>
+        </div>
+        <p class="empty-title">Kolejka jest pusta</p>
+        <p class="empty-desc">Włącz utwór na komputerze lub wyszukaj powyżej, aby utworzyć nową kolejkę.</p>
+      </div>
+    </div>
+  </div>
+
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="client.js"></script>
+  <script src="client.js?v=1.3.0"></script>
 </body>
 </html>

@@ -19,7 +19,7 @@ const server = http.createServer((req, res) => {
       }))
     };
     res.writeHead(200, {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*'
     });
     res.end(JSON.stringify(statusData));
@@ -32,7 +32,7 @@ const server = http.createServer((req, res) => {
     const query = parsedUrl.searchParams.get('q') || '';
     if (!query.trim()) {
       res.writeHead(200, {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',
         'Access-Control-Allow-Origin': '*'
       });
       res.end(JSON.stringify({ queries: [], songs: [] }));
@@ -41,7 +41,7 @@ const server = http.createServer((req, res) => {
 
     getYTMSuggestions(query.trim(), (result) => {
       res.writeHead(200, {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',
         'Access-Control-Allow-Origin': '*'
       });
       res.end(JSON.stringify(result));
@@ -55,10 +55,10 @@ const server = http.createServer((req, res) => {
   const ext = path.extname(filePath);
 
   const mimeTypes = {
-    '.html': 'text/html',
-    '.js': 'text/javascript',
-    '.css': 'text/css',
-    '.json': 'application/json',
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
     '.svg': 'image/svg+xml',
@@ -68,14 +68,17 @@ const server = http.createServer((req, res) => {
   fs.readFile(filePath, (err, content) => {
     if (err) {
       if (err.code === 'ENOENT') {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end('404 Not Found');
       } else {
-        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end('500 Server Error');
       }
     } else {
-      res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' });
+      res.writeHead(200, {
+        'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
       res.end(content);
     }
   });
@@ -225,9 +228,12 @@ function getYTMSuggestions(query, callback) {
     context: { client: { clientName: 'WEB_REMIX', clientVersion: '1.20231204.01.00', hl: 'pl', gl: 'PL' } },
     input: query
   });
-  const postDataSearch = JSON.stringify({
+
+  // Filtr "Utwory" w wyszukiwarce YouTube Music
+  const postDataSongs = JSON.stringify({
     context: { client: { clientName: 'WEB_REMIX', clientVersion: '1.20231204.01.00', hl: 'pl', gl: 'PL' } },
-    query: query
+    query: query,
+    params: 'EgWKAQIIAWoKEAkQChAFEAMQBA%3D%3D'
   });
 
   let queries = [];
@@ -247,12 +253,16 @@ function getYTMSuggestions(query, callback) {
     }
   };
 
-  // 1. Podpowiedzi tekstowe
+  // 1. Podpowiedzi tekstowe z YouTube Music
   const req1 = https.request('https://music.youtube.com/youtubei/v1/music/get_search_suggestions?prettyPrint=false', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-    timeout: 3000
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    },
+    timeout: 3500
   }, (res) => {
+    res.setEncoding('utf8');
     let d = '';
     res.on('data', c => d += c);
     res.on('end', () => {
@@ -275,64 +285,58 @@ function getYTMSuggestions(query, callback) {
   req1.write(postDataSuggest);
   req1.end();
 
-  // 2. Pełne wyniki wyszukiwania (dokładne utwory z okładkami i videoId)
+  // 2. Wyszukiwanie utworów (kategoria Utwory / Songs)
   const req2 = https.request('https://music.youtube.com/youtubei/v1/search?prettyPrint=false', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-    timeout: 3000
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    },
+    timeout: 3500
   }, (res) => {
+    res.setEncoding('utf8');
     let d = '';
     res.on('data', c => d += c);
     res.on('end', () => {
       try {
         const json = JSON.parse(d);
-        function findItems(obj) {
+        function parseItems(obj) {
           if (!obj || typeof obj !== 'object') return;
           if (obj.musicResponsiveListItemRenderer) {
             const r = obj.musicResponsiveListItemRenderer;
             const title = r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map(x => x.text).join('') || '';
             const subtitle = r.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map(x => x.text).join('') || '';
-            const thumb = r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.[0]?.url || '';
+            
+            const thumbs = r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
+            let thumb = '';
+            if (thumbs.length > 0) {
+              thumb = thumbs[thumbs.length - 1].url;
+            }
+
             const videoId = r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.navigationEndpoint?.watchEndpoint?.videoId ||
                             r.playlistItemData?.videoId ||
                             r.navigationEndpoint?.watchEndpoint?.videoId || '';
-            if (title && videoId) {
+
+            // Odrzucamy podcasty i odcinki, zatrzymujemy utwory
+            if (title && videoId && !subtitle.toLowerCase().includes('odcinek') && !subtitle.toLowerCase().includes('podcast')) {
               songs.push({ title, subtitle, thumb, videoId });
             }
           }
           for (const k of Object.keys(obj)) {
-            findItems(obj[k]);
+            parseItems(obj[k]);
           }
         }
-        findItems(json);
+        parseItems(json);
       } catch(e) {}
       done();
     });
   });
   req2.on('error', done);
   req2.on('timeout', () => { req2.destroy(); done(); });
-  req2.write(postDataSearch);
+  req2.write(postDataSongs);
   req2.end();
-}
-
-function fallbackGoogleSuggest(query, callback) {
-  const suggestUrl = `https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=${encodeURIComponent(query)}`;
-  https.get(suggestUrl, (res) => {
-    let data = '';
-    res.on('data', c => data += c);
-    res.on('end', () => {
-      try {
-        const parsed = JSON.parse(data);
-        const queries = parsed[1] || [];
-        callback({ queries, songs: [] });
-      } catch (e) {
-        callback({ queries: [], songs: [] });
-      }
-    });
-  }).on('error', () => callback({ queries: [], songs: [] }));
 }
 
 server.listen(PORT, () => {
   console.log(`🚀 YTM Connect Server działa na porcie ${PORT}`);
 });
-

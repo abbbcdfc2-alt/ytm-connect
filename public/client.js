@@ -227,6 +227,21 @@
   const saveModalBtn = document.getElementById('saveModalBtn');
   const cancelModalBtn = document.getElementById('cancelModalBtn');
 
+  // Rozsuwana kolejka odtwarzania (Bottom Sheet Drawer)
+  const queueDrawerTrigger = document.getElementById('queueDrawerTrigger');
+  const queueTriggerCount = document.getElementById('queueTriggerCount');
+  const queueBackdrop = document.getElementById('queueBackdrop');
+  const queueBottomSheet = document.getElementById('queueBottomSheet');
+  const queueDragHandle = document.getElementById('queueDragHandle');
+  const queueSheetCount = document.getElementById('queueSheetCount');
+  const queueCloseBtn = document.getElementById('queueCloseBtn');
+  const queueScrollContainer = document.getElementById('queueScrollContainer');
+  const queueList = document.getElementById('queueList');
+  const queueEmptyState = document.getElementById('queueEmptyState');
+
+  let currentQueue = [];
+  let isQueueSheetOpen = false;
+
   function formatTime(seconds) {
     if (isNaN(seconds) || seconds < 0) return '0:00';
     const m = Math.floor(seconds / 60);
@@ -351,6 +366,11 @@
     } else {
       // W trybie telefonu tylko zachowaj w pamięci w razie chęci przełączenia
       currentState.videoId = state.videoId || currentState.videoId;
+    }
+
+    // Aktualizacja kolejki odtwarzania
+    if (Array.isArray(state.queue)) {
+      updateQueue(state.queue);
     }
   }
 
@@ -733,6 +753,257 @@
       if (ws) ws.close();
     }
   });
+
+  // ========================================================
+  // Obsługa rozsuwanej kolejki (Bottom Sheet Queue Manager)
+  // ========================================================
+  function getPolishSongWord(n) {
+    if (n === 1) return 'utwór';
+    const rem10 = n % 10;
+    const rem100 = n % 100;
+    if (rem10 >= 2 && rem10 <= 4 && (rem100 < 10 || rem100 >= 20)) return 'utwory';
+    return 'utworów';
+  }
+
+  function updateQueue(queue) {
+    currentQueue = Array.isArray(queue) ? queue : [];
+    const count = currentQueue.length;
+
+    if (queueTriggerCount) {
+      queueTriggerCount.textContent = count;
+    }
+    if (queueSheetCount) {
+      queueSheetCount.textContent = `${count} ${getPolishSongWord(count)} w kolejce`;
+    }
+
+    renderQueueList();
+  }
+
+  function renderQueueList() {
+    if (!queueList) return;
+
+    if (!currentQueue || currentQueue.length === 0) {
+      queueList.innerHTML = '';
+      if (queueEmptyState) queueEmptyState.classList.remove('hidden');
+      return;
+    }
+
+    if (queueEmptyState) queueEmptyState.classList.add('hidden');
+
+    const prevScrollTop = queueScrollContainer ? queueScrollContainer.scrollTop : 0;
+    queueList.innerHTML = '';
+
+    currentQueue.forEach((item, index) => {
+      const el = document.createElement('div');
+      el.className = `queue-item ${item.selected ? 'playing' : ''}`;
+      el.dataset.index = index;
+
+      const thumbUrl = item.thumb || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' fill='%23222'%3E%3Crect width='44' height='44'/%3E%3C/svg%3E";
+
+      el.innerHTML = `
+        <span class="queue-item-index">${index + 1}</span>
+        <img class="queue-item-thumb" src="${escapeHtml(thumbUrl)}" alt="" loading="lazy" />
+        <div class="queue-item-details">
+          <span class="queue-item-title">${escapeHtml(item.title || 'Nieznany utwór')}</span>
+          <div class="queue-item-meta">
+            ${item.selected ? `
+              <div class="queue-equalizer">
+                <span></span><span></span><span></span>
+              </div>
+            ` : ''}
+            <span class="queue-item-artist">${escapeHtml(item.artist || 'YouTube Music')}</span>
+            ${item.duration ? `<span class="queue-item-dur">• ${escapeHtml(item.duration)}</span>` : ''}
+          </div>
+        </div>
+        <div class="queue-item-actions">
+          <button class="queue-action-btn btn-move-up" data-action="up" data-index="${index}" title="Przesuń w górę" ${index === 0 ? 'disabled' : ''}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/>
+            </svg>
+          </button>
+          <button class="queue-action-btn btn-move-down" data-action="down" data-index="${index}" title="Przesuń w dół" ${index === currentQueue.length - 1 ? 'disabled' : ''}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+            </svg>
+          </button>
+          <button class="queue-action-btn btn-remove" data-action="remove" data-index="${index}" title="Usuń z kolejki">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+            </svg>
+          </button>
+        </div>
+      `;
+
+      // Kliknięcie w wiersz odtwarza dany utwór
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.queue-action-btn')) return;
+        playQueueItem(index);
+      });
+
+      queueList.appendChild(el);
+    });
+
+    if (queueScrollContainer && prevScrollTop > 0) {
+      queueScrollContainer.scrollTop = prevScrollTop;
+    }
+  }
+
+  // Delegacja kliknięć przycisków w kolejce (W górę, W dół, Usuń)
+  if (queueList) {
+    queueList.addEventListener('click', (e) => {
+      const actionBtn = e.target.closest('.queue-action-btn');
+      if (!actionBtn) return;
+      e.stopPropagation();
+
+      const action = actionBtn.dataset.action;
+      const index = parseInt(actionBtn.dataset.index, 10);
+      if (isNaN(index)) return;
+
+      if (action === 'up' && index > 0) {
+        moveQueueItem(index, index - 1);
+      } else if (action === 'down' && index < currentQueue.length - 1) {
+        moveQueueItem(index, index + 1);
+      } else if (action === 'remove') {
+        removeQueueItem(index);
+      }
+    });
+  }
+
+  function playQueueItem(index) {
+    const item = currentQueue[index];
+    if (!item) return;
+
+    // Optymistyczne zaznaczenie jako grający
+    currentQueue.forEach((q, idx) => {
+      q.selected = (idx === index);
+    });
+    renderQueueList();
+
+    if (targetDevice === 'desktop') {
+      if (item.videoId) {
+        sendCommand('play_queue_item', item.videoId);
+      } else {
+        sendCommand('play_queue_item', index);
+      }
+    } else {
+      if (item.videoId) {
+        loadPhoneVideo(item.videoId, 0);
+      }
+    }
+  }
+
+  function moveQueueItem(fromIndex, toIndex) {
+    if (fromIndex < 0 || fromIndex >= currentQueue.length || toIndex < 0 || toIndex >= currentQueue.length) return;
+
+    // Optymistyczna zamiana kolejności w interfejsie
+    const moved = currentQueue.splice(fromIndex, 1)[0];
+    currentQueue.splice(toIndex, 0, moved);
+    renderQueueList();
+
+    if (targetDevice === 'desktop') {
+      sendCommand('move_queue_item', { from: fromIndex, to: toIndex });
+    }
+  }
+
+  function removeQueueItem(index) {
+    if (index < 0 || index >= currentQueue.length) return;
+
+    // Optymistyczne usunięcie z listy
+    currentQueue.splice(index, 1);
+    const count = currentQueue.length;
+    if (queueTriggerCount) queueTriggerCount.textContent = count;
+    if (queueSheetCount) queueSheetCount.textContent = `${count} ${getPolishSongWord(count)} w kolejce`;
+    renderQueueList();
+
+    if (targetDevice === 'desktop') {
+      sendCommand('remove_queue_item', index);
+    }
+  }
+
+  function openQueueSheet() {
+    if (!queueBottomSheet || !queueBackdrop) return;
+    queueBottomSheet.classList.add('open');
+    queueBackdrop.classList.add('visible');
+    isQueueSheetOpen = true;
+
+    // Przewiń płynnie do aktualnie odtwarzanego utworu
+    setTimeout(() => {
+      const playingEl = queueList.querySelector('.queue-item.playing');
+      if (playingEl && queueScrollContainer) {
+        playingEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 150);
+  }
+
+  function closeQueueSheet() {
+    if (!queueBottomSheet || !queueBackdrop) return;
+    queueBottomSheet.classList.remove('open');
+    queueBackdrop.classList.remove('visible');
+    queueBottomSheet.style.transform = '';
+    isQueueSheetOpen = false;
+  }
+
+  if (queueDrawerTrigger) {
+    queueDrawerTrigger.addEventListener('click', openQueueSheet);
+  }
+
+  if (queueCloseBtn) {
+    queueCloseBtn.addEventListener('click', closeQueueSheet);
+  }
+
+  if (queueBackdrop) {
+    queueBackdrop.addEventListener('click', closeQueueSheet);
+  }
+
+  // Obsługa gestu przeciągnięcia w dół palcem (Swipe to dismiss)
+  let touchStartY = 0;
+  let touchCurrentY = 0;
+  let isDraggingSheet = false;
+
+  function onSheetTouchStart(e) {
+    if (queueScrollContainer && queueScrollContainer.scrollTop > 5 && e.target.closest('#queueScrollContainer')) {
+      return;
+    }
+    touchStartY = e.touches[0].clientY;
+    touchCurrentY = touchStartY;
+    isDraggingSheet = true;
+    queueBottomSheet.style.transition = 'none';
+  }
+
+  function onSheetTouchMove(e) {
+    if (!isDraggingSheet) return;
+    touchCurrentY = e.touches[0].clientY;
+    const deltaY = touchCurrentY - touchStartY;
+    if (deltaY > 0) {
+      if (e.cancelable) e.preventDefault();
+      queueBottomSheet.style.transform = `translateY(${deltaY}px)`;
+    }
+  }
+
+  function onSheetTouchEnd() {
+    if (!isDraggingSheet) return;
+    isDraggingSheet = false;
+    queueBottomSheet.style.transition = 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)';
+    const deltaY = touchCurrentY - touchStartY;
+    if (deltaY > 75) {
+      closeQueueSheet();
+    } else {
+      queueBottomSheet.style.transform = 'translateY(0)';
+    }
+  }
+
+  if (queueDragHandle) {
+    queueDragHandle.addEventListener('touchstart', onSheetTouchStart, { passive: true });
+    queueDragHandle.addEventListener('touchmove', onSheetTouchMove, { passive: false });
+    queueDragHandle.addEventListener('touchend', onSheetTouchEnd);
+  }
+
+  const sheetHeader = document.querySelector('.queue-sheet-header');
+  if (sheetHeader) {
+    sheetHeader.addEventListener('touchstart', onSheetTouchStart, { passive: true });
+    sheetHeader.addEventListener('touchmove', onSheetTouchMove, { passive: false });
+    sheetHeader.addEventListener('touchend', onSheetTouchEnd);
+  }
 
   // Start aplikacji
   connect();
