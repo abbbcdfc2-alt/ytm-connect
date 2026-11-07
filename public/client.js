@@ -19,7 +19,8 @@
     title: '',
     artist: '',
     artwork: '',
-    videoId: ''
+    videoId: '',
+    likeStatus: 'INDIFFERENT'
   };
 
   let selectedSong = null;
@@ -208,6 +209,8 @@
   const pauseIcon = document.getElementById('pauseIcon');
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
+  const likeBtn = document.getElementById('likeBtn');
+  const dislikeBtn = document.getElementById('dislikeBtn');
   const volumeSlider = document.getElementById('volumeSlider');
   const btnOpenInYtmApp = document.getElementById('btnOpenInYtmApp');
 
@@ -428,6 +431,13 @@
       if (typeof state.volume === 'number') {
         volumeSlider.value = state.volume;
       }
+
+      if (typeof state.likeStatus === 'string') {
+        currentState.likeStatus = state.likeStatus;
+        updateLikeButtonsUI(state.likeStatus);
+      } else if (!state.title || state.title.includes('Brak')) {
+        updateLikeButtonsUI('INDIFFERENT');
+      }
     } else {
       // W trybie telefonu tylko zachowaj w pamięci w razie chęci przełączenia
       currentState.videoId = state.videoId || currentState.videoId;
@@ -446,6 +456,28 @@
     const percent = duration > 0 ? (current / duration) * 100 : 0;
     progressBarFill.style.width = `${percent}%`;
     seekSlider.value = percent;
+  }
+
+  function updateLikeButtonsUI(status) {
+    if (!likeBtn || !dislikeBtn) return;
+    const isLike = (status === 'LIKE');
+    const isDislike = (status === 'DISLIKE');
+
+    likeBtn.classList.toggle('active-like', isLike);
+    const likeOutline = likeBtn.querySelector('.icon-outline');
+    const likeFilled = likeBtn.querySelector('.icon-filled');
+    if (likeOutline && likeFilled) {
+      likeOutline.classList.toggle('hidden', isLike);
+      likeFilled.classList.toggle('hidden', !isLike);
+    }
+
+    dislikeBtn.classList.toggle('active-dislike', isDislike);
+    const dislikeOutline = dislikeBtn.querySelector('.icon-outline');
+    const dislikeFilled = dislikeBtn.querySelector('.icon-filled');
+    if (dislikeOutline && dislikeFilled) {
+      dislikeOutline.classList.toggle('hidden', isDislike);
+      dislikeFilled.classList.toggle('hidden', !isDislike);
+    }
   }
 
   function startLocalProgress() {
@@ -542,6 +574,17 @@
     }
   });
 
+  if (likeBtn) {
+    likeBtn.addEventListener('click', () => {
+      const nextStatus = (currentState.likeStatus === 'LIKE') ? 'INDIFFERENT' : 'LIKE';
+      currentState.likeStatus = nextStatus;
+      updateLikeButtonsUI(nextStatus);
+      if (targetDevice === 'desktop') {
+        sendCommand('like');
+      }
+    });
+  }
+
   prevBtn.addEventListener('click', () => {
     if (targetDevice === 'desktop') {
       sendCommand('prev');
@@ -557,6 +600,17 @@
       phoneSeek(currentState.duration || 0);
     }
   });
+
+  if (dislikeBtn) {
+    dislikeBtn.addEventListener('click', () => {
+      const nextStatus = (currentState.likeStatus === 'DISLIKE') ? 'INDIFFERENT' : 'DISLIKE';
+      currentState.likeStatus = nextStatus;
+      updateLikeButtonsUI(nextStatus);
+      if (targetDevice === 'desktop') {
+        sendCommand('dislike');
+      }
+    });
+  }
 
   // Przewijanie utworu
   seekSlider.addEventListener('input', () => {

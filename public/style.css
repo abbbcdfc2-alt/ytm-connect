@@ -446,7 +446,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 32px;
+  gap: 18px;
   width: 100%;
   margin: 6px 0;
 }
@@ -468,15 +468,36 @@ body {
 
 .control-btn.secondary {
   color: #ffffff;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
+}
+
+.control-btn.rate-btn {
+  color: #8e8e8e;
+  width: 40px;
+  height: 40px;
+  transition: color 0.2s ease, transform 0.1s ease, filter 0.2s ease;
+}
+
+.control-btn.rate-btn:hover {
+  color: #ffffff;
+}
+
+.control-btn.rate-btn.active-like {
+  color: #1db954;
+  filter: drop-shadow(0 0 6px rgba(29, 185, 84, 0.5));
+}
+
+.control-btn.rate-btn.active-dislike {
+  color: #ff5555;
+  filter: drop-shadow(0 0 6px rgba(255, 85, 85, 0.5));
 }
 
 .control-btn.primary {
   background: #ffffff;
   color: #000000;
-  width: 62px;
-  height: 62px;
+  width: 60px;
+  height: 60px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
