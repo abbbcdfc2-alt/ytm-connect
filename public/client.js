@@ -765,8 +765,31 @@
     return 'utworów';
   }
 
+  function deduplicateQueue(queue) {
+    if (!Array.isArray(queue) || queue.length <= 1) return queue || [];
+
+    // Jeśli cała tablica to zdwojony zestaw (z dwóch kontenerów DOM YouTube Music)
+    if (queue.length % 2 === 0) {
+      const half = queue.length / 2;
+      let isExactHalfDuplicate = true;
+      for (let i = 0; i < half; i++) {
+        const a = queue[i];
+        const b = queue[i + half];
+        if (!a || !b || a.title !== b.title || a.artist !== b.artist) {
+          isExactHalfDuplicate = false;
+          break;
+        }
+      }
+      if (isExactHalfDuplicate) {
+        return queue.slice(0, half).map((item, idx) => ({ ...item, index: idx }));
+      }
+    }
+
+    return queue;
+  }
+
   function updateQueue(queue) {
-    currentQueue = Array.isArray(queue) ? queue : [];
+    currentQueue = deduplicateQueue(Array.isArray(queue) ? queue : []);
     const count = currentQueue.length;
 
     if (queueTriggerCount) {
