@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>YTM Connect</title>
+  <meta name="theme-color" content="#121212">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Ambientny blur w tle na bazie aktualnej okładki -->
+  <div class="background-blur" id="bgBlur"></div>
+
+  <div class="app-container">
+    <!-- Górny pasek statusu -->
+    <header class="header">
+      <div class="device-badge" id="statusBadge">
+        <span class="status-dot"></span>
+        <span id="statusText">Łączenie...</span>
+      </div>
+      <button class="settings-btn" id="settingsBtn" title="Ustawienia">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Wyszukiwarka muzyki z podpowiedziami (YouTube Music Search) -->
+    <div class="search-section">
+      <div class="search-bar" id="searchBar">
+        <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" fill="#aaaaaa">
+          <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+        </svg>
+        <input type="text" id="searchInput" placeholder="Wyszukaj utwór lub wykonawcę..." autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button class="clear-btn hidden" id="searchClearBtn" title="Wyczyść">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="#aaaaaa">
+            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Dropdown z podpowiedziami wyszukiwania -->
+      <div class="search-dropdown hidden" id="searchDropdown"></div>
+    </div>
+
+    <!-- Przełącznik urządzeń (Gdzie odtwarzać muzykę) -->
+    <div class="device-switcher">
+      <button class="device-btn active" id="btnTargetPc" data-target="desktop">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
+        </svg>
+        <span>Komputer (PC)</span>
+      </button>
+      <button class="device-btn" id="btnTargetPhone" data-target="phone">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/>
+        </svg>
+        <span>Ten telefon</span>
+      </button>
+    </div>
+
+    <!-- Główny odtwarzacz (Okładka, tytuł, kontrolki) -->
+    <main class="player-view">
+      <div class="art-container">
+        <img id="albumArt" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' fill='%231f1f1f'%3E%3Crect width='300' height='300'/%3E%3Ccircle cx='150' cy='150' r='50' fill='%23333333'/%3E%3Cpolygon points='145,130 165,150 145,170' fill='%23888888'/%3E%3C/svg%3E" alt="Okładka" />
+      </div>
+
+      <div class="track-info">
+        <h1 class="track-title" id="trackTitle">Brak odtwarzania</h1>
+        <p class="track-artist" id="trackArtist">Wyszukaj utwór u góry lub włącz na PC</p>
+      </div>
+
+      <!-- Pasek postępu utworu -->
+      <div class="progress-section">
+        <div class="progress-bar-container" id="progressBarContainer">
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="progressBarFill"></div>
+          </div>
+          <input type="range" id="seekSlider" min="0" max="100" value="0" step="0.5">
+        </div>
+        <div class="time-labels">
+          <span id="currentTime">0:00</span>
+          <span id="totalDuration">0:00</span>
+        </div>
+      </div>
+
+      <!-- Przyciski sterowania (Wektorowe ikony SVG) -->
+      <div class="controls-section">
+        <!-- Poprzedni utwór -->
+        <button class="control-btn secondary" id="prevBtn" title="Poprzedni utwór">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor">
+            <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+          </svg>
+        </button>
+
+        <!-- Odtwórz / Wstrzymaj (Główny duży przycisk) -->
+        <button class="control-btn primary" id="playBtn" title="Odtwórz / Wstrzymaj">
+          <svg id="playIcon" viewBox="0 0 24 24" width="36" height="36" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          <svg id="pauseIcon" class="hidden" viewBox="0 0 24 24" width="36" height="36" fill="currentColor">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+          </svg>
+        </button>
+
+        <!-- Następny utwór -->
+        <button class="control-btn secondary" id="nextBtn" title="Następny utwór">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor">
+            <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Suwak głośności z ikonami głośnika -->
+      <div class="volume-section">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="#888888">
+          <path d="M7 9v6h4l5 5V4l-5 5H7z"/>
+        </svg>
+        <input type="range" id="volumeSlider" min="0" max="100" value="100">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="#888888">
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+        </svg>
+      </div>
+    </main>
+
+    <!-- Modal Ustawień Pokoju i Serwera -->
+    <div class="modal hidden" id="settingsModal">
+      <div class="modal-content">
+        <h3>Ustawienia YTM Connect</h3>
+        
+        <label for="roomInput">Kod pokoju / PIN:</label>
+        <input type="text" id="roomInput" value="ytm-room-1">
+        
+        <label for="nameInput">Nazwa tego telefonu:</label>
+        <input type="text" id="nameInput" value="Telefon (Android)">
+
+        <label for="serverInput">Adres serwera:</label>
+        <input type="text" id="serverInput" placeholder="https://twoj-serwer...">
+
+        <div class="modal-buttons">
+          <button id="cancelModalBtn" class="btn-secondary">Anuluj</button>
+          <button id="saveModalBtn" class="btn-primary">Zapisz i Połącz</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="client.js"></script>
+</body>
+</html>

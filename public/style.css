@@ -1,0 +1,549 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #0d0d0d;
+  color: #ffffff;
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+}
+
+/* Ambientny blur w tle */
+.background-blur {
+  position: absolute;
+  top: -60px;
+  left: -60px;
+  right: -60px;
+  bottom: -60px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(55px) brightness(0.25);
+  z-index: 1;
+  transition: background-image 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-container {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 440px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 20px;
+  justify-content: space-between;
+}
+
+/* Header */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.device-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #e0e0e0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4d4d;
+  transition: background-color 0.3s, box-shadow 0.3s;
+}
+
+.device-badge.connected .status-dot {
+  background: #1db954;
+  box-shadow: 0 0 8px #1db954;
+}
+
+.device-badge.connecting .status-dot {
+  background: #f5a623;
+  box-shadow: 0 0 6px #f5a623;
+}
+
+.settings-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.settings-btn:active {
+  transform: scale(0.92);
+}
+
+/* Wyszukiwarka z podpowiedziami */
+.search-section {
+  position: relative;
+  width: 100%;
+  margin-bottom: 12px;
+  z-index: 10;
+}
+
+.search-bar {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  padding: 6px 14px;
+  transition: all 0.2s ease;
+}
+
+.search-bar:focus-within {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.search-icon {
+  flex-shrink: 0;
+  margin-right: 10px;
+}
+
+#searchInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 13.5px;
+  outline: none;
+  width: 100%;
+}
+
+#searchInput::placeholder {
+  color: #888888;
+}
+
+.clear-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+/* Dropdown z podpowiedziami (Dokładny styl YouTube Music) */
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #1e1e1e;
+  border: 1px solid #333333;
+  border-radius: 14px;
+  overflow-y: auto;
+  max-height: 380px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.85);
+  z-index: 100;
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.search-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  user-select: none;
+}
+
+.search-item:active,
+.search-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Tekstowe sugestie wyszukiwania */
+.query-item {
+  gap: 14px;
+  font-size: 14px;
+  color: #eeeeee;
+}
+
+.query-item svg {
+  flex-shrink: 0;
+  fill: #888888;
+}
+
+.query-item .query-text {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.query-item .query-text strong {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+/* Sugestie utworów / albumów z miniaturką */
+.song-item {
+  gap: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.song-thumb {
+  width: 46px;
+  height: 46px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #2a2a2a;
+}
+
+.song-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.song-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.song-subtitle {
+  font-size: 11.5px;
+  color: #999999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Przełącznik urządzeń (Gdzie odtwarzać) */
+.device-switcher {
+  display: flex;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 3px;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.device-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: #a0a0a0;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.device-btn.active {
+  background: #1db954;
+  color: #000000;
+  box-shadow: 0 2px 10px rgba(29, 185, 84, 0.35);
+}
+
+.device-btn:active {
+  transform: scale(0.97);
+}
+
+/* Główny widok odtwarzacza */
+.player-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  justify-content: center;
+  gap: 16px;
+  min-height: 0;
+}
+
+.art-container {
+  width: 100%;
+  max-width: 270px;
+  aspect-ratio: 1 / 1;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+#albumArt {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.track-info {
+  text-align: center;
+  width: 100%;
+  padding: 0 8px;
+}
+
+.track-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+.track-artist {
+  font-size: 13.5px;
+  color: #aaaaaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Pasek postępu utworu */
+.progress-section {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.progress-bar-container {
+  position: relative;
+  width: 100%;
+  height: 22px;
+  display: flex;
+  align-items: center;
+}
+
+.progress-bar-bg {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: #1db954;
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+
+#seekSlider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.time-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: #888888;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Kontrolki odtwarzania */
+.controls-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  width: 100%;
+  margin: 6px 0;
+}
+
+.control-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: transform 0.1s ease, background-color 0.2s ease;
+}
+
+.control-btn:active {
+  transform: scale(0.91);
+}
+
+.control-btn.secondary {
+  color: #ffffff;
+  width: 48px;
+  height: 48px;
+}
+
+.control-btn.primary {
+  background: #ffffff;
+  color: #000000;
+  width: 62px;
+  height: 62px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.control-btn.primary:hover {
+  background: #ececec;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Suwak głośności */
+.volume-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 270px;
+  padding: 4px 0;
+}
+
+#volumeSlider {
+  flex: 1;
+  accent-color: #1db954;
+  height: 4px;
+  cursor: pointer;
+}
+
+/* Modal Ustawień */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.modal-content {
+  background: #1e1e1e;
+  border: 1px solid #333333;
+  border-radius: 14px;
+  padding: 22px;
+  width: 88%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.9);
+}
+
+.modal-content h3 {
+  font-size: 16px;
+  margin-bottom: 2px;
+}
+
+.modal-content label {
+  font-size: 11px;
+  color: #888888;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.modal-content input {
+  background: #2a2a2a;
+  border: 1px solid #444444;
+  color: #ffffff;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  outline: none;
+}
+
+.modal-content input:focus {
+  border-color: #1db954;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.modal-buttons button {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: #1db954;
+  color: #000000;
+}
+
+.btn-secondary {
+  background: #333333;
+  color: #ffffff;
+}
