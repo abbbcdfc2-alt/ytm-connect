@@ -800,7 +800,7 @@
   function deduplicateQueue(queue) {
     if (!Array.isArray(queue) || queue.length <= 1) return queue || [];
 
-    // Jeśli cała tablica to zdwojony zestaw (z dwóch kontenerów DOM YouTube Music)
+    // 1. Jeśli cała tablica to zdwojony zestaw (z dwóch kontenerów DOM YouTube Music)
     if (queue.length % 2 === 0) {
       const half = queue.length / 2;
       let isExactHalfDuplicate = true;
@@ -813,11 +813,52 @@
         }
       }
       if (isExactHalfDuplicate) {
-        return queue.slice(0, half).map((item, idx) => ({ ...item, index: idx }));
+        queue = queue.slice(0, half);
       }
     }
 
-    return queue;
+    // 2. Usuń pary duplikatów występujące bezpośrednio obok siebie (wersja wideo + wersja audio)
+    const clean = [];
+    for (let i = 0; i < queue.length; i++) {
+      const item = queue[i];
+      if (!item || !item.title) continue;
+
+      const norm = item.title.toLowerCase().trim().replace(/\s*\(video\s*version\)/gi, '').replace(/\s*\(official\s*video\)/gi, '');
+      const prev = clean.length > 0 ? clean[clean.length - 1] : null;
+
+      if (prev) {
+        const prevNorm = prev.title.toLowerCase().trim().replace(/\s*\(video\s*version\)/gi, '').replace(/\s*\(official\s*video\)/gi, '');
+        if (norm === prevNorm) {
+          // Jeśli obecny utwór gra lub ma okładkę, podmień poprzedni
+          if ((item.selected && !prev.selected) || (!prev.thumb && item.thumb)) {
+            clean[clean.length - 1] = item;
+          }
+          continue;
+        }
+      }
+
+      // Jeśli brakuje okładki, uzupełnij z YouTube CDN
+      if ((!item.thumb || item.thumb.includes('data:image')) && item.videoId) {
+        item.thumb = `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`;
+      }
+
+      clean.push(item);
+    }
+
+    // 3. Bezwzględnie dopilnuj, aby tylko JEDEN utwór na całej liście miał zaznaczenie 'selected'
+    let foundPlaying = false;
+    clean.forEach((item, idx) => {
+      item.index = idx;
+      if (item.selected) {
+        if (!foundPlaying) {
+          foundPlaying = true;
+        } else {
+          item.selected = false;
+        }
+      }
+    });
+
+    return clean;
   }
 
   function updateQueue(queue) {
