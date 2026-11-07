@@ -1,0 +1,6 @@
+# Pliki z kontami i prywatnymi danymi użytkowników
+accounts.json
+.data/
+*.log
+.env
+node_modules/

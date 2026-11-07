@@ -8,8 +8,24 @@ const { WebSocketServer, WebSocket } = require('ws');
 const PORT = process.env.PORT || 3000;
 const SERVER_BUILD_ID = 'v1.4.0-' + Date.now();
 
-// --- Baza Kont i Tokenów (Zapisywana do pliku accounts.json) ---
-const ACCOUNTS_FILE = path.join(__dirname, 'accounts.json');
+// --- Prywatna Baza Kont i Tokenów (Zapisywana w ukrytym katalogu .data, niedostępnym przez HTTP) ---
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '.data');
+if (!fs.existsSync(DATA_DIR)) {
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+}
+const ACCOUNTS_FILE = path.join(DATA_DIR, 'accounts.json');
+
+// Migracja starego pliku accounts.json jeśli istniał w katalogu głównym
+const oldAccountsFile = path.join(__dirname, 'accounts.json');
+if (fs.existsSync(oldAccountsFile)) {
+  try {
+    if (!fs.existsSync(ACCOUNTS_FILE)) {
+      fs.copyFileSync(oldAccountsFile, ACCOUNTS_FILE);
+    }
+    fs.unlinkSync(oldAccountsFile);
+  } catch (e) {}
+}
+
 let accountsData = { users: {}, tokens: {} };
 
 function loadAccounts() {
@@ -217,7 +233,23 @@ const server = http.createServer((req, res) => {
 
   if (reqUrl === '/') reqUrl = '/index.html';
 
-  const filePath = path.join(__dirname, 'public', reqUrl);
+  const publicDir = path.resolve(__dirname, 'public');
+  // Bezpieczne rozwiązanie ścieżki i blokada directory traversal
+  const safePath = path.resolve(publicDir, '.' + reqUrl);
+
+  // Bezwzględna ochrona prywatności kont: blokuj próby dostępu do bazy kont lub plików poza katalogiem public/
+  if (
+    !safePath.startsWith(publicDir) ||
+    reqUrl.toLowerCase().includes('accounts') ||
+    safePath.toLowerCase().includes('accounts') ||
+    safePath.toLowerCase().includes('.data')
+  ) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden - Dostęp zabroniony');
+    return;
+  }
+
+  const filePath = safePath;
   const ext = path.extname(filePath);
 
   const mimeTypes = {
