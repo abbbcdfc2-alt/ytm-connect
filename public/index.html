@@ -11,6 +11,9 @@
   <!-- Ambientny blur w tle na bazie aktualnej okładki -->
   <div class="background-blur" id="bgBlur"></div>
 
+  <!-- Ukryty odtwarzacz YouTube dla trybu "Ten telefon" -->
+  <div id="phonePlayerContainer" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;pointer-events:none;opacity:0.01;"></div>
+
   <div class="app-container">
     <!-- Górny pasek statusu -->
     <header class="header">
@@ -68,6 +71,7 @@
       <div class="track-info">
         <h1 class="track-title" id="trackTitle">Brak odtwarzania</h1>
         <p class="track-artist" id="trackArtist">Wyszukaj utwór u góry lub włącz na PC</p>
+        <button id="btnOpenInYtmApp" class="open-app-pill hidden">Otwórz w aplikacji YTM ↗</button>
       </div>
 
       <!-- Pasek postępu utworu -->
@@ -145,6 +149,7 @@
     </div>
   </div>
 
+  <script src="https://www.youtube.com/iframe_api"></script>
   <script src="client.js"></script>
 </body>
 </html>

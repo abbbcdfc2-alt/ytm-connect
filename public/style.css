@@ -353,6 +353,30 @@ body {
   text-overflow: ellipsis;
 }
 
+.open-app-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 0, 0, 0.15);
+  border: 1px solid rgba(255, 60, 60, 0.4);
+  color: #ff5555;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: all 0.2s ease;
+}
+
+.open-app-pill:hover,
+.open-app-pill:active {
+  background: rgba(255, 0, 0, 0.28);
+  border-color: #ff3333;
+  color: #ffffff;
+  transform: scale(0.97);
+}
+
 /* Pasek postępu utworu */
 .progress-section {
   width: 100%;

@@ -1,7 +1,7 @@
-// YTM Connect - Web Client (Pilot na telefon)
+// YTM Connect - Web Client (Pilot na telefon z pełną obsługą PC i Telefonu)
 (function () {
   let ws = null;
-  let targetDevice = 'desktop'; // 'desktop' (PC) lub 'phone' (Ten telefon)
+  let targetDevice = 'desktop'; // 'desktop' (Komputer PC) lub 'phone' (Ten telefon)
 
   let config = {
     room: localStorage.getItem('ytm_room') || 'ytm-room-1',
@@ -13,14 +13,167 @@
     isPlaying: false,
     currentTime: 0,
     duration: 0,
-    volume: 100
+    volume: 100,
+    title: '',
+    artist: '',
+    artwork: '',
+    videoId: ''
   };
 
+  let selectedSong = null;
   let isSeeking = false;
   let progressInterval = null;
   let searchDebounceTimer = null;
   let heartbeatTimer = null;
 
+  // --- YouTube IFrame API dla trybu "Ten telefon" ---
+  let phonePlayer = null;
+  let phonePlayerReady = false;
+  let phoneCurrentVideoId = '';
+  let phonePlayerInterval = null;
+
+  window.onYouTubeIframeAPIReady = function () {
+    try {
+      phonePlayer = new YT.Player('phonePlayerContainer', {
+        height: '1',
+        width: '1',
+        playerVars: {
+          autoplay: 1,
+          controls: 0,
+          playsinline: 1,
+          rel: 0,
+          enablejsapi: 1,
+          origin: window.location.origin
+        },
+        events: {
+          onReady: () => {
+            phonePlayerReady = true;
+            console.log('[Phone Player] Gotowy do odtwarzania.');
+          },
+          onStateChange: (event) => {
+            handlePhonePlayerStateChange(event.data);
+          }
+        }
+      });
+    } catch (e) {
+      console.warn('[Phone Player] Błąd inicjalizacji YT Player:', e);
+    }
+  };
+
+  function handlePhonePlayerStateChange(stateCode) {
+    if (targetDevice !== 'phone') return;
+
+    // YT.PlayerState: 1 = PLAYING, 2 = PAUSED, 3 = BUFFERING, 0 = ENDED
+    if (stateCode === 1) {
+      currentState.isPlaying = true;
+      playIcon.classList.add('hidden');
+      pauseIcon.classList.remove('hidden');
+      startPhoneProgressSync();
+    } else if (stateCode === 2 || stateCode === 0) {
+      currentState.isPlaying = false;
+      playIcon.classList.remove('hidden');
+      pauseIcon.classList.add('hidden');
+      stopPhoneProgressSync();
+    }
+  }
+
+  function startPhoneProgressSync() {
+    stopPhoneProgressSync();
+    phonePlayerInterval = setInterval(() => {
+      if (phonePlayer && phonePlayerReady && targetDevice === 'phone') {
+        try {
+          const cur = Math.floor(phonePlayer.getCurrentTime() || 0);
+          const dur = Math.floor(phonePlayer.getDuration() || 0);
+          currentState.currentTime = cur;
+          currentState.duration = dur;
+          if (!isSeeking) {
+            updateProgressUI(cur, dur);
+          }
+        } catch (e) {}
+      }
+    }, 1000);
+  }
+
+  function stopPhoneProgressSync() {
+    if (phonePlayerInterval) {
+      clearInterval(phonePlayerInterval);
+      phonePlayerInterval = null;
+    }
+  }
+
+  function loadPhoneVideo(videoId, startSeconds = 0) {
+    if (!videoId) return;
+    phoneCurrentVideoId = videoId;
+    console.log('[Phone Player] Ładowanie wideo na telefonie:', videoId);
+
+    if (phonePlayer && phonePlayerReady && typeof phonePlayer.loadVideoById === 'function') {
+      try {
+        phonePlayer.loadVideoById({
+          videoId: videoId,
+          startSeconds: startSeconds
+        });
+        phonePlayer.playVideo();
+      } catch (e) {
+        console.warn('[Phone Player] Błąd loadVideoById:', e);
+      }
+    } else {
+      // Jeśli API iframe jeszcze się ładuje, zaktualizuj kontener
+      const container = document.getElementById('phonePlayerContainer');
+      if (container) {
+        container.innerHTML = `<iframe width="1" height="1" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&playsinline=1" allow="autoplay" style="opacity:0.01;"></iframe>`;
+      }
+    }
+
+    currentState.isPlaying = true;
+    playIcon.classList.add('hidden');
+    pauseIcon.classList.remove('hidden');
+  }
+
+  function phonePlay() {
+    if (phonePlayer && phonePlayerReady && typeof phonePlayer.playVideo === 'function') {
+      phonePlayer.playVideo();
+    }
+    currentState.isPlaying = true;
+    playIcon.classList.add('hidden');
+    pauseIcon.classList.remove('hidden');
+  }
+
+  function phonePause() {
+    if (phonePlayer && phonePlayerReady && typeof phonePlayer.pauseVideo === 'function') {
+      phonePlayer.pauseVideo();
+    }
+    currentState.isPlaying = false;
+    playIcon.classList.remove('hidden');
+    pauseIcon.classList.add('hidden');
+  }
+
+  function phoneToggle() {
+    if (currentState.isPlaying) {
+      phonePause();
+    } else {
+      if (phoneCurrentVideoId) {
+        phonePlay();
+      } else if (selectedSong && selectedSong.videoId) {
+        loadPhoneVideo(selectedSong.videoId);
+      } else if (currentState.videoId) {
+        loadPhoneVideo(currentState.videoId);
+      }
+    }
+  }
+
+  function phoneSeek(seconds) {
+    if (phonePlayer && phonePlayerReady && typeof phonePlayer.seekTo === 'function') {
+      phonePlayer.seekTo(seconds, true);
+    }
+  }
+
+  function phoneVolume(val) {
+    if (phonePlayer && phonePlayerReady && typeof phonePlayer.setVolume === 'function') {
+      phonePlayer.setVolume(val);
+    }
+  }
+
+  // --- Heartbeat Ping/Pong ---
   function startHeartbeat() {
     stopHeartbeat();
     heartbeatTimer = setInterval(() => {
@@ -54,6 +207,7 @@
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
   const volumeSlider = document.getElementById('volumeSlider');
+  const btnOpenInYtmApp = document.getElementById('btnOpenInYtmApp');
 
   // Wyszukiwarka i podpowiedzi
   const searchInput = document.getElementById('searchInput');
@@ -73,8 +227,6 @@
   const saveModalBtn = document.getElementById('saveModalBtn');
   const cancelModalBtn = document.getElementById('cancelModalBtn');
 
-  const DEFAULT_REMOTE_URL = 'https://elegant-authentic-packs-much.trycloudflare.com';
-
   function formatTime(seconds) {
     if (isNaN(seconds) || seconds < 0) return '0:00';
     const m = Math.floor(seconds / 60);
@@ -83,23 +235,16 @@
   }
 
   function connect() {
-    let targetOrigin = '';
+    let wsHost = window.location.host || 'ytm-connect.onrender.com';
+    let wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
     if (config.serverUrl && config.serverUrl.startsWith('http')) {
-      targetOrigin = config.serverUrl;
-    } else if (location.origin && location.origin.startsWith('http')) {
-      targetOrigin = location.origin;
-    } else {
-      targetOrigin = DEFAULT_REMOTE_URL;
+      try {
+        const u = new URL(config.serverUrl);
+        wsHost = u.host;
+        wsProtocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+      } catch (e) {}
     }
-
-    let wsHost = 'elegant-authentic-packs-much.trycloudflare.com';
-    let wsProtocol = 'wss:';
-
-    try {
-      const u = new URL(targetOrigin);
-      wsHost = u.host;
-      wsProtocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
-    } catch (e) {}
 
     const wsUrl = `${wsProtocol}//${wsHost}/ws`;
     console.log('[Pilot] Łączenie z WebSocket:', wsUrl);
@@ -136,7 +281,7 @@
 
     ws.onclose = () => {
       stopHeartbeat();
-      updateStatus('disconnected', 'Rozłączono. Ponawianie...');
+      updateStatus('disconnected', 'Rozłączono. Ponawianie za 3s...');
       setTimeout(connect, 3000);
     };
 
@@ -153,45 +298,59 @@
   function handleMessage(msg) {
     if (msg.type === 'desktop_state') {
       applyDesktopState(msg.state);
-      updateStatus('connected', 'PC (Firefox) - Gotowy');
     } else if (msg.type === 'room_info') {
       const desktop = msg.clients && msg.clients.find(c => c.role === 'desktop');
       if (desktop) {
-        updateStatus('connected', desktop.name || 'PC (Firefox)');
+        if (targetDevice === 'desktop') {
+          updateStatus('connected', desktop.name || 'Komputer (Firefox)');
+        }
       } else {
-        updateStatus('connecting', 'Oczekiwanie na PC...');
+        if (targetDevice === 'desktop') {
+          updateStatus('connecting', 'Oczekiwanie na PC...');
+        }
       }
     }
   }
 
   function applyDesktopState(state) {
     if (!state) return;
-    currentState = state;
 
-    trackTitle.textContent = state.title || 'Brak utworu';
-    trackArtist.textContent = (state.artist || '') + (state.album ? ' • ' + state.album : '');
+    // Jeśli użytkownik jest w trybie PC, zaktualizuj stan
+    if (targetDevice === 'desktop') {
+      currentState = Object.assign({}, currentState, state);
 
-    if (state.artwork) {
-      albumArt.src = state.artwork;
-      bgBlur.style.backgroundImage = `url("${state.artwork}")`;
-    }
+      trackTitle.textContent = state.title || 'Brak utworu';
+      trackArtist.textContent = (state.artist || '') + (state.album ? ' • ' + state.album : '');
 
-    if (state.isPlaying) {
-      playIcon.classList.add('hidden');
-      pauseIcon.classList.remove('hidden');
-      startLocalProgress();
+      if (state.artwork) {
+        albumArt.src = state.artwork;
+        bgBlur.style.backgroundImage = `url("${state.artwork}")`;
+      }
+
+      if (state.videoId || selectedSong) {
+        btnOpenInYtmApp.classList.remove('hidden');
+      }
+
+      if (state.isPlaying) {
+        playIcon.classList.add('hidden');
+        pauseIcon.classList.remove('hidden');
+        startLocalProgress();
+      } else {
+        playIcon.classList.remove('hidden');
+        pauseIcon.classList.add('hidden');
+        stopLocalProgress();
+      }
+
+      if (!isSeeking) {
+        updateProgressUI(state.currentTime, state.duration);
+      }
+
+      if (typeof state.volume === 'number') {
+        volumeSlider.value = state.volume;
+      }
     } else {
-      playIcon.classList.remove('hidden');
-      pauseIcon.classList.add('hidden');
-      stopLocalProgress();
-    }
-
-    if (!isSeeking) {
-      updateProgressUI(state.currentTime, state.duration);
-    }
-
-    if (typeof state.volume === 'number') {
-      volumeSlider.value = state.volume;
+      // W trybie telefonu tylko zachowaj w pamięci w razie chęci przełączenia
+      currentState.videoId = state.videoId || currentState.videoId;
     }
   }
 
@@ -222,12 +381,10 @@
   }
 
   function sendCommand(action, value) {
-    if (targetDevice === 'phone') {
-      executePhoneAction(action, value);
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.warn('[Pilot] WebSocket nie jest otwarty, pomijanie komendy:', action);
       return;
     }
-
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({
       type: 'command',
       target: 'desktop',
@@ -237,37 +394,84 @@
     }));
   }
 
-  function executePhoneAction(action, value) {
-    if (action === 'search_and_play' || action === 'play_video') {
-      const url = action === 'play_video'
-        ? `https://music.youtube.com/watch?v=${encodeURIComponent(value)}`
-        : `https://music.youtube.com/search?q=${encodeURIComponent(value)}`;
-
-      if (window.AndroidBridge && window.AndroidBridge.openTrackOnPhone) {
-        window.AndroidBridge.openTrackOnPhone(action === 'play_video' ? value : '', action === 'search_and_play' ? value : '');
-      } else {
-        window.open(url, '_blank');
-      }
-    }
-  }
-
   // --- Przełącznik urządzeń (Gdzie odtwarzać) ---
   btnTargetPc.addEventListener('click', () => {
+    if (targetDevice === 'desktop') return;
     targetDevice = 'desktop';
     btnTargetPc.classList.add('active');
     btnTargetPhone.classList.remove('active');
+    updateStatus('connected', 'Komputer (PC)');
+
+    // Wstrzymaj odtwarzacz telefonu
+    phonePause();
+
+    // Przekaż odtwarzanie na PC, jeśli na telefonie coś leciało
+    if (phoneCurrentVideoId) {
+      sendCommand('play_video', phoneCurrentVideoId);
+    } else if (selectedSong && selectedSong.videoId) {
+      sendCommand('play_video', selectedSong.videoId);
+    }
   });
 
   btnTargetPhone.addEventListener('click', () => {
+    if (targetDevice === 'phone') return;
     targetDevice = 'phone';
     btnTargetPhone.classList.add('active');
     btnTargetPc.classList.remove('active');
+    updateStatus('connected', 'Ten telefon');
+
+    // Wstrzymaj PC
+    if (currentState.isPlaying) {
+      sendCommand('pause');
+    }
+
+    // Przenieś aktualny utwór na telefon
+    const vidToPlay = (selectedSong && selectedSong.videoId) || currentState.videoId;
+    if (vidToPlay) {
+      loadPhoneVideo(vidToPlay, currentState.currentTime || 0);
+    }
   });
 
   // --- Kontrolki odtwarzacza ---
-  playBtn.addEventListener('click', () => sendCommand('toggle'));
-  prevBtn.addEventListener('click', () => sendCommand('prev'));
-  nextBtn.addEventListener('click', () => sendCommand('next'));
+  playBtn.addEventListener('click', () => {
+    if (targetDevice === 'desktop') {
+      if (currentState.isPlaying) {
+        sendCommand('pause');
+        currentState.isPlaying = false;
+        playIcon.classList.remove('hidden');
+        pauseIcon.classList.add('hidden');
+      } else {
+        // Jeśli na PC nic nie gra, a użytkownik wybrał piosenkę z listy
+        if ((!currentState.title || currentState.title.includes('Brak')) && selectedSong) {
+          playBySong(selectedSong);
+        } else {
+          sendCommand('play');
+        }
+        currentState.isPlaying = true;
+        playIcon.classList.add('hidden');
+        pauseIcon.classList.remove('hidden');
+      }
+    } else {
+      // Ten telefon
+      phoneToggle();
+    }
+  });
+
+  prevBtn.addEventListener('click', () => {
+    if (targetDevice === 'desktop') {
+      sendCommand('prev');
+    } else {
+      phoneSeek(0);
+    }
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (targetDevice === 'desktop') {
+      sendCommand('next');
+    } else {
+      phoneSeek(currentState.duration || 0);
+    }
+  });
 
   // Przewijanie utworu
   seekSlider.addEventListener('input', () => {
@@ -281,15 +485,39 @@
   seekSlider.addEventListener('change', () => {
     const targetPercent = parseFloat(seekSlider.value);
     const targetTime = (targetPercent / 100) * (currentState.duration || 0);
-    sendCommand('seek', Math.floor(targetTime));
     currentState.currentTime = targetTime;
     isSeeking = false;
+
+    if (targetDevice === 'desktop') {
+      sendCommand('seek', Math.floor(targetTime));
+    } else {
+      phoneSeek(Math.floor(targetTime));
+    }
   });
 
   // Głośność
   volumeSlider.addEventListener('input', () => {
     const val = parseInt(volumeSlider.value, 10);
-    sendCommand('volume', val);
+    if (targetDevice === 'desktop') {
+      sendCommand('volume', val);
+    } else {
+      phoneVolume(val);
+    }
+  });
+
+  // Otwórz w aplikacji YTM
+  btnOpenInYtmApp.addEventListener('click', () => {
+    const vid = (selectedSong && selectedSong.videoId) || currentState.videoId || '';
+    const title = (selectedSong && selectedSong.title) || currentState.title || '';
+
+    if (window.AndroidBridge && window.AndroidBridge.openTrackOnPhone) {
+      window.AndroidBridge.openTrackOnPhone(vid, title);
+    } else {
+      const url = vid
+        ? `https://music.youtube.com/watch?v=${encodeURIComponent(vid)}`
+        : `https://music.youtube.com/search?q=${encodeURIComponent(title)}`;
+      window.location.href = url;
+    }
   });
 
   // --- Wyszukiwarka i podpowiedzi (Autocomplete) ---
@@ -336,13 +564,9 @@
   });
 
   function fetchSuggestions(query) {
-    let apiBase = '';
+    let apiBase = window.location.origin;
     if (config.serverUrl && config.serverUrl.startsWith('http')) {
       apiBase = config.serverUrl.replace(/\/+$/, '');
-    } else if (location.origin && location.origin.startsWith('http')) {
-      apiBase = location.origin.replace(/\/+$/, '');
-    } else {
-      apiBase = DEFAULT_REMOTE_URL;
     }
 
     fetch(`${apiBase}/api/suggest?q=${encodeURIComponent(query)}`)
@@ -368,12 +592,35 @@
 
     const lowerQuery = query.toLowerCase();
 
-    // 1. Tekstowe podpowiedzi wyszukiwania (Dokładnie jak na screenie YTM)
+    // 1. Podpowiedzi konkretnych utworów z miniaturkami okładek (Na samej górze)
+    songs.forEach(song => {
+      const item = document.createElement('div');
+      item.className = 'search-item song-item';
+
+      const thumbUrl = song.thumb || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='46' height='46' fill='%23333'%3E%3Crect width='46' height='46'/%3E%3C/svg%3E";
+
+      item.innerHTML = `
+        <img class="song-thumb" src="${escapeHtml(thumbUrl)}" alt="" />
+        <div class="song-info">
+          <span class="song-title">${escapeHtml(song.title)}</span>
+          <span class="song-subtitle">${escapeHtml(song.subtitle || '')}</span>
+        </div>
+      `;
+
+      item.addEventListener('click', () => {
+        searchInput.value = song.title;
+        searchDropdown.classList.add('hidden');
+        playBySong(song);
+      });
+
+      searchDropdown.appendChild(item);
+    });
+
+    // 2. Tekstowe podpowiedzi wyszukiwania
     queries.forEach(qText => {
       const item = document.createElement('div');
       item.className = 'search-item query-item';
 
-      // Wyszukaj i pogrub pasujący fragment
       let displayHtml = escapeHtml(qText);
       const idx = qText.toLowerCase().indexOf(lowerQuery);
       if (idx !== -1) {
@@ -399,30 +646,6 @@
       searchDropdown.appendChild(item);
     });
 
-    // 2. Podpowiedzi konkretnych utworów z miniaturkami okładek
-    songs.forEach(song => {
-      const item = document.createElement('div');
-      item.className = 'search-item song-item';
-
-      const thumbUrl = song.thumb || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='46' height='46' fill='%23333'%3E%3Crect width='46' height='46'/%3E%3C/svg%3E";
-
-      item.innerHTML = `
-        <img class="song-thumb" src="${escapeHtml(thumbUrl)}" alt="" />
-        <div class="song-info">
-          <span class="song-title">${escapeHtml(song.title)}</span>
-          <span class="song-subtitle">${escapeHtml(song.subtitle || '')}</span>
-        </div>
-      `;
-
-      item.addEventListener('click', () => {
-        searchInput.value = song.title;
-        searchDropdown.classList.add('hidden');
-        playBySong(song);
-      });
-
-      searchDropdown.appendChild(item);
-    });
-
     searchDropdown.classList.remove('hidden');
   }
 
@@ -430,22 +653,42 @@
     if (targetDevice === 'desktop') {
       sendCommand('search_and_play', query);
     } else {
-      executePhoneAction('search_and_play', query);
+      loadPhoneVideo('', 0);
+      if (window.AndroidBridge && window.AndroidBridge.openTrackOnPhone) {
+        window.AndroidBridge.openTrackOnPhone('', query);
+      }
     }
   }
 
   function playBySong(song) {
+    if (!song) return;
+    selectedSong = song;
+
+    // 1. Natychmiastowa aktualizacja interfejsu pilota (Tytuł, artysta, okładka, play/pause)
+    trackTitle.textContent = song.title;
+    trackArtist.textContent = song.subtitle || 'YouTube Music';
+    if (song.thumb) {
+      albumArt.src = song.thumb;
+      bgBlur.style.backgroundImage = `url("${song.thumb}")`;
+    }
+    btnOpenInYtmApp.classList.remove('hidden');
+    playIcon.classList.add('hidden');
+    pauseIcon.classList.remove('hidden');
+    currentState.isPlaying = true;
+    currentState.videoId = song.videoId || '';
+
+    // 2. Odtwarzanie w zależności od wybranego urządzenia docelowego
     if (targetDevice === 'desktop') {
+      updateStatus('connected', 'Odtwarzanie na PC...');
       if (song.videoId) {
         sendCommand('play_video', song.videoId);
       } else {
         sendCommand('search_and_play', song.title);
       }
     } else {
+      updateStatus('connected', 'Odtwarzanie na telefonie');
       if (song.videoId) {
-        executePhoneAction('play_video', song.videoId);
-      } else {
-        executePhoneAction('search_and_play', song.title);
+        loadPhoneVideo(song.videoId, 0);
       }
     }
   }
