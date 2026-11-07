@@ -239,13 +239,28 @@
   const authForgotStep1Card = document.getElementById('authForgotStep1Card');
   const authForgotStep2Card = document.getElementById('authForgotStep2Card');
 
-  const authUsername = document.getElementById('authUsername');
-  const authPassword = document.getElementById('authPassword');
-  const authEmail = document.getElementById('authEmail');
-  const rememberMeMobile = document.getElementById('rememberMeMobile');
-  const authSubmitBtn = document.getElementById('authSubmitBtn');
+  const tabBtnLogin = document.getElementById('tabBtnLogin');
+  const tabBtnRegister = document.getElementById('tabBtnRegister');
+  const loginFormSection = document.getElementById('loginFormSection');
+  const registerFormSection = document.getElementById('registerFormSection');
   const authError = document.getElementById('authError');
+
+  // Logowanie
+  const loginUsername = document.getElementById('loginUsername');
+  const loginPassword = document.getElementById('loginPassword');
+  const rememberMeLogin = document.getElementById('rememberMeLogin');
+  const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+  const switchToRegisterBtn = document.getElementById('switchToRegisterBtn');
   const openForgotBtn = document.getElementById('openForgotBtn');
+
+  // Tworzenie konta
+  const regUsername = document.getElementById('regUsername');
+  const regPassword = document.getElementById('regPassword');
+  const regPasswordConfirm = document.getElementById('regPasswordConfirm');
+  const regEmail = document.getElementById('regEmail');
+  const rememberMeReg = document.getElementById('rememberMeReg');
+  const registerSubmitBtn = document.getElementById('registerSubmitBtn');
+  const switchToLoginBtn = document.getElementById('switchToLoginBtn');
 
   const forgotIdentifierInput = document.getElementById('forgotIdentifierInput');
   const forgotExtraEmailGroup = document.getElementById('forgotExtraEmailGroup');
@@ -1376,8 +1391,9 @@
   if (openForgotBtn) {
     openForgotBtn.addEventListener('click', () => {
       switchAuthView('step1');
-      if (authUsername && authUsername.value.trim() && forgotIdentifierInput) {
-        forgotIdentifierInput.value = authUsername.value.trim();
+      const val = (loginUsername && loginUsername.value.trim()) || (regUsername && regUsername.value.trim()) || '';
+      if (val && forgotIdentifierInput) {
+        forgotIdentifierInput.value = val;
       }
     });
   }
@@ -1584,13 +1600,51 @@
     });
   }
 
-  // Standardowe logowanie / rejestracja
-  if (authSubmitBtn) {
-    authSubmitBtn.addEventListener('click', async () => {
-      const u = authUsername.value.trim();
-      const p = authPassword.value.trim();
-      const e = authEmail ? authEmail.value.trim() : '';
-      const rem = rememberMeMobile ? rememberMeMobile.checked : true;
+  // Przełączanie zakładek Logowanie <-> Tworzenie konta
+  function switchAuthTab(tab) {
+    const isLogin = tab === 'login';
+    if (tabBtnLogin) tabBtnLogin.classList.toggle('active', isLogin);
+    if (tabBtnRegister) tabBtnRegister.classList.toggle('active', !isLogin);
+    if (loginFormSection) loginFormSection.classList.toggle('hidden', !isLogin);
+    if (registerFormSection) registerFormSection.classList.toggle('hidden', isLogin);
+    showAuthError('');
+    if (isLogin && loginUsername) setTimeout(() => loginUsername.focus(), 50);
+    if (!isLogin && regUsername) setTimeout(() => regUsername.focus(), 50);
+  }
+
+  if (tabBtnLogin) tabBtnLogin.addEventListener('click', () => switchAuthTab('login'));
+  if (tabBtnRegister) tabBtnRegister.addEventListener('click', () => switchAuthTab('register'));
+  if (switchToRegisterBtn) switchToRegisterBtn.addEventListener('click', () => switchAuthTab('register'));
+  if (switchToLoginBtn) switchToLoginBtn.addEventListener('click', () => switchAuthTab('login'));
+
+  // Obsługa Enter w polach logowania
+  [loginUsername, loginPassword].forEach(input => {
+    if (!input) return;
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (loginSubmitBtn) loginSubmitBtn.click();
+      }
+    });
+  });
+
+  // Obsługa Enter w polach tworzenia konta
+  [regUsername, regPassword, regPasswordConfirm, regEmail].forEach(input => {
+    if (!input) return;
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (registerSubmitBtn) registerSubmitBtn.click();
+      }
+    });
+  });
+
+  // Standardowe Logowanie
+  if (loginSubmitBtn) {
+    loginSubmitBtn.addEventListener('click', async () => {
+      const u = loginUsername ? loginUsername.value.trim() : '';
+      const p = loginPassword ? loginPassword.value.trim() : '';
+      const rem = rememberMeLogin ? rememberMeLogin.checked : true;
 
       if (!u) {
         showAuthError('Wpisz nazwę użytkownika / login');
@@ -1601,22 +1655,22 @@
         return;
       }
 
-      authSubmitBtn.disabled = true;
-      authSubmitBtn.textContent = 'Logowanie...';
+      loginSubmitBtn.disabled = true;
+      loginSubmitBtn.textContent = 'Logowanie...';
       showAuthError('');
 
       try {
         const resp = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: u, password: p, email: e })
+          body: JSON.stringify({ username: u, password: p })
         });
         const data = await resp.json();
 
         if (!resp.ok || data.error) {
           showAuthError(data.error || 'Błąd logowania');
-          authSubmitBtn.disabled = false;
-          authSubmitBtn.textContent = 'Zaloguj / Utwórz konto';
+          loginSubmitBtn.disabled = false;
+          loginSubmitBtn.textContent = 'Zaloguj się';
           return;
         }
 
@@ -1640,7 +1694,7 @@
         if (accountUsername) accountUsername.textContent = data.username;
         if (data.email && settingsEmailInput) settingsEmailInput.value = data.email;
         if (authOverlay) authOverlay.classList.add('hidden');
-        authPassword.value = '';
+        if (loginPassword) loginPassword.value = '';
 
         // Zrestartuj połączenie z nowym tokenem konta
         if (ws) ws.close();
@@ -1648,8 +1702,100 @@
       } catch (err) {
         showAuthError('Błąd połączenia z serwerem: ' + err.message);
       } finally {
-        authSubmitBtn.disabled = false;
-        authSubmitBtn.textContent = 'Zaloguj / Utwórz konto';
+        loginSubmitBtn.disabled = false;
+        loginSubmitBtn.textContent = 'Zaloguj się';
+      }
+    });
+  }
+
+  // Tworzenie konta / Rejestracja
+  if (registerSubmitBtn) {
+    registerSubmitBtn.addEventListener('click', async () => {
+      const u = regUsername ? regUsername.value.trim() : '';
+      const p = regPassword ? regPassword.value.trim() : '';
+      const cp = regPasswordConfirm ? regPasswordConfirm.value.trim() : '';
+      const em = regEmail ? regEmail.value.trim() : '';
+      const rem = rememberMeReg ? rememberMeReg.checked : true;
+
+      if (!u) {
+        showAuthError('Wpisz nazwę użytkownika / login');
+        return;
+      }
+      if (u.length < 3) {
+        showAuthError('Login musi mieć co najmniej 3 znaki');
+        return;
+      }
+      if (!p || p.length < 3) {
+        showAuthError('Hasło musi mieć co najmniej 3 znaki');
+        return;
+      }
+      if (p !== cp) {
+        showAuthError('Wpisane hasła nie są identyczne!');
+        return;
+      }
+      if (!em || !em.includes('@') || em.length < 5) {
+        showAuthError('Podaj poprawny adres e-mail (do odzyskiwania hasła)');
+        return;
+      }
+
+      registerSubmitBtn.disabled = true;
+      registerSubmitBtn.textContent = 'Tworzenie konta...';
+      showAuthError('');
+
+      try {
+        const resp = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: u,
+            password: p,
+            confirmPassword: cp,
+            email: em
+          })
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+          showAuthError(data.error || 'Błąd rejestracji konta');
+          registerSubmitBtn.disabled = false;
+          registerSubmitBtn.textContent = 'Utwórz konto';
+          return;
+        }
+
+        config.token = data.token;
+        config.username = data.username;
+        localStorage.setItem('ytm_token', data.token);
+        localStorage.setItem('ytm_username', data.username);
+        if (data.email) {
+          localStorage.setItem('ytm_email', data.email);
+        }
+
+        if (rem) {
+          localStorage.setItem('ytm_remember_me', 'true');
+          if (data.reauthKey) {
+            localStorage.setItem('ytm_reauth_key', data.reauthKey);
+            localStorage.removeItem('ytm_user_hash');
+          }
+        } else {
+          localStorage.removeItem('ytm_remember_me');
+          localStorage.removeItem('ytm_reauth_key');
+          localStorage.removeItem('ytm_user_hash');
+        }
+
+        if (accountUsername) accountUsername.textContent = data.username;
+        if (data.email && settingsEmailInput) settingsEmailInput.value = data.email;
+        if (authOverlay) authOverlay.classList.add('hidden');
+        if (regPassword) regPassword.value = '';
+        if (regPasswordConfirm) regPasswordConfirm.value = '';
+
+        // Zrestartuj połączenie z nowym tokenem konta
+        if (ws) ws.close();
+        else connect();
+      } catch (err) {
+        showAuthError('Błąd połączenia z serwerem: ' + err.message);
+      } finally {
+        registerSubmitBtn.disabled = false;
+        registerSubmitBtn.textContent = 'Utwórz konto';
       }
     });
   }

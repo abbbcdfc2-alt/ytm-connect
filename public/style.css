@@ -1075,7 +1075,62 @@ body {
   font-weight: 700;
   color: #ffffff;
   text-align: center;
-  margin: 0 0 6px 0;
+  margin: 0 0 16px 0;
+}
+
+.auth-tabs {
+  display: flex;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 18px;
+  gap: 4px;
+}
+
+.auth-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #aaaaaa;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 9px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.auth-tab:hover {
+  color: #ffffff;
+}
+
+.auth-tab.active {
+  background: #1db954;
+  color: #000000;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(29, 185, 84, 0.35);
+}
+
+.auth-switch-row {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 12.5px;
+  color: #888888;
+}
+
+.auth-switch-link {
+  color: #1db954;
+  background: none;
+  border: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0 4px;
+}
+
+.auth-switch-link:hover {
+  color: #1ed760;
 }
 
 .auth-subtitle {

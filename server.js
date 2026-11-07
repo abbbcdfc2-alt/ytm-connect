@@ -183,9 +183,9 @@ function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 64).toString('hex');
 }
 
-function authenticateOrRegister(username, password, email) {
+function loginUser(username, password) {
   if (!username || typeof username !== 'string' || !username.trim()) {
-    return { error: 'Podaj nazwę użytkownika' };
+    return { error: 'Podaj nazwę użytkownika / login' };
   }
   if (!password || typeof password !== 'string' || password.length < 3) {
     return { error: 'Hasło musi mieć co najmniej 3 znaki' };
@@ -193,44 +193,21 @@ function authenticateOrRegister(username, password, email) {
 
   const cleanUser = username.trim();
   const lowerUser = cleanUser.toLowerCase();
-
-  let user = accountsData.users[lowerUser];
-  let isNew = false;
+  const user = accountsData.users[lowerUser];
 
   if (!user) {
-    // Rejestracja nowego konta
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = hashPassword(password, salt);
-    user = {
-      username: lowerUser,
-      displayName: cleanUser,
-      email: (email && typeof email === 'string' && email.includes('@')) ? email.trim().toLowerCase() : '',
-      salt: salt,
-      hash: hash,
-      reauthKey: crypto.randomBytes(32).toString('hex'),
-      createdAt: new Date().toISOString()
-    };
-    accountsData.users[lowerUser] = user;
-    isNew = true;
-    console.log(`[Auth] Utworzono nowe konto: ${cleanUser}`);
-  } else {
-    // Logowanie do istniejącego konta
-    const testHash = hashPassword(password, user.salt);
-    if (!timingSafeEqualStr(testHash, user.hash)) {
-      return { error: 'Nieprawidłowe hasło dla tego konta' };
-    }
-    // Wygeneruj unikalny klucz reautoryzacji jeśli konto jeszcze go nie miało
-    if (!user.reauthKey) {
-      user.reauthKey = crypto.randomBytes(32).toString('hex');
-    }
-    // Zapisz e-mail jeśli użytkownik podał go przy logowaniu, a konto jeszcze go nie miało
-    if (email && !user.email && typeof email === 'string' && email.includes('@')) {
-      user.email = email.trim().toLowerCase();
-    }
-    console.log(`[Auth] Zalogowano pomyślnie: ${user.displayName}`);
+    return { error: 'Konto o podanym loginie nie istnieje. Przejdź do rejestracji i utwórz konto.' };
   }
 
-  // Wygeneruj bezpieczny token sesji (ważny na stałe do momentu wylogowania)
+  const testHash = hashPassword(password, user.salt);
+  if (!timingSafeEqualStr(testHash, user.hash)) {
+    return { error: 'Nieprawidłowe hasło dla tego konta' };
+  }
+
+  if (!user.reauthKey) {
+    user.reauthKey = crypto.randomBytes(32).toString('hex');
+  }
+
   const token = crypto.randomBytes(24).toString('hex');
   accountsData.tokens[token] = {
     username: lowerUser,
@@ -238,14 +215,82 @@ function authenticateOrRegister(username, password, email) {
   };
   saveAccounts();
 
+  console.log(`[Auth] Zalogowano pomyślnie: ${user.displayName}`);
+
   return {
     success: true,
     token: token,
     username: user.displayName,
     email: user.email || '',
-    reauthKey: user.reauthKey,
-    isNew: isNew
+    reauthKey: user.reauthKey
   };
+}
+
+function registerUser(username, password, confirmPassword, email) {
+  if (!username || typeof username !== 'string' || !username.trim()) {
+    return { error: 'Podaj nazwę użytkownika / login' };
+  }
+  const cleanUser = username.trim();
+  if (cleanUser.length < 3) {
+    return { error: 'Login musi mieć co najmniej 3 znaki' };
+  }
+  if (!password || typeof password !== 'string' || password.length < 3) {
+    return { error: 'Hasło musi mieć co najmniej 3 znaki' };
+  }
+  if (confirmPassword !== undefined && password !== confirmPassword) {
+    return { error: 'Wpisane hasła nie są identyczne!' };
+  }
+  if (!email || typeof email !== 'string' || !email.includes('@') || email.trim().length < 5) {
+    return { error: 'Podaj poprawny adres e-mail (potrzebny do odzyskiwania hasła)' };
+  }
+
+  const lowerUser = cleanUser.toLowerCase();
+  if (accountsData.users[lowerUser]) {
+    return { error: 'Konto o takim loginie już istnieje. Wybierz inny login lub zaloguj się.' };
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  const reauthKey = crypto.randomBytes(32).toString('hex');
+
+  const user = {
+    username: lowerUser,
+    displayName: cleanUser,
+    email: cleanEmail,
+    salt: salt,
+    hash: hash,
+    reauthKey: reauthKey,
+    createdAt: new Date().toISOString()
+  };
+
+  accountsData.users[lowerUser] = user;
+
+  const token = crypto.randomBytes(24).toString('hex');
+  accountsData.tokens[token] = {
+    username: lowerUser,
+    createdAt: new Date().toISOString()
+  };
+  saveAccounts();
+
+  console.log(`[Auth] Zarejestrowano nowe konto: ${cleanUser} (${cleanEmail})`);
+
+  return {
+    success: true,
+    token: token,
+    username: user.displayName,
+    email: user.email,
+    reauthKey: user.reauthKey,
+    isNew: true
+  };
+}
+
+function authenticateOrRegister(username, password, email) {
+  const lower = (username || '').trim().toLowerCase();
+  if (accountsData.users[lower]) {
+    return loginUser(username, password);
+  }
+  return registerUser(username, password, password, email || '');
 }
 
 function getUserByToken(token) {
@@ -290,7 +335,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // --- API Autoryzacji Kont ---
+  // --- API Logowania do Konta ---
   if (reqUrl === '/api/auth/login' && req.method === 'POST') {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
     if (!checkRateLimit('login_' + ip, 15, 15 * 60 * 1000)) {
@@ -300,14 +345,41 @@ const server = http.createServer((req, res) => {
     }
 
     readJsonBody(req, (err, data) => {
-      if (err) {
+      if (err || !data.username || !data.password) {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Nieprawidłowy format JSON' }));
+        res.end(JSON.stringify({ error: 'Wpisz login i hasło' }));
         return;
       }
-      const result = authenticateOrRegister(data.username, data.password, data.email);
+      const result = loginUser(data.username, data.password);
       if (result.error) {
         res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: result.error }));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      }
+    });
+    return;
+  }
+
+  // --- API Tworzenia / Rejestracji Nowego Konta ---
+  if (reqUrl === '/api/auth/register' && req.method === 'POST') {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    if (!checkRateLimit('reg_' + ip, 10, 15 * 60 * 1000)) {
+      res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'Zbyt wiele prób rejestracji. Odczekaj 15 minut.' }));
+      return;
+    }
+
+    readJsonBody(req, (err, data) => {
+      if (err || !data.username || !data.password) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Wypełnij wszystkie wymagane pola' }));
+        return;
+      }
+      const result = registerUser(data.username, data.password, data.confirmPassword, data.email);
+      if (result.error) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ error: result.error }));
       } else {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });

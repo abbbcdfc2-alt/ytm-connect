@@ -225,45 +225,84 @@
 
   <!-- Ekran Logowania, Rejestracji oraz Resetowania Hasła (Z kodem na mail) -->
   <div class="auth-overlay hidden" id="authOverlay">
-    <!-- Widok 1: Logowanie / Rejestracja -->
+    <!-- Widok 1: Logowanie oraz Tworzenie Konta -->
     <div class="auth-card" id="authLoginCard">
       <div class="auth-logo">🎵</div>
       <h2 class="auth-title">YTM Connect</h2>
-      <p class="auth-subtitle">Zaloguj się lub utwórz nowe konto</p>
+
+      <!-- Zakładki: Logowanie / Tworzenie konta -->
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" id="tabBtnLogin">Logowanie</button>
+        <button type="button" class="auth-tab" id="tabBtnRegister">Tworzenie konta</button>
+      </div>
 
       <div class="auth-error hidden" id="authError"></div>
 
-      <div class="auth-form-group">
-        <label for="authUsername">Login / Nazwa użytkownika</label>
-        <input type="text" id="authUsername" placeholder="np. filip" autocomplete="username" spellcheck="false" autocapitalize="none">
+      <!-- Formularz Logowania -->
+      <div id="loginFormSection">
+        <div class="auth-form-group">
+          <label for="loginUsername">Login / Nazwa użytkownika</label>
+          <input type="text" id="loginUsername" placeholder="np. filip" autocomplete="username" spellcheck="false" autocapitalize="none">
+        </div>
+
+        <div class="auth-form-group">
+          <label for="loginPassword">Hasło</label>
+          <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+        </div>
+
+        <div class="remember-row">
+          <label class="checkbox-container">
+            <input type="checkbox" id="rememberMeLogin" checked>
+            <span>Zapamiętaj mnie (sesja nie wygasa)</span>
+          </label>
+        </div>
+
+        <button type="button" id="loginSubmitBtn" class="auth-submit-btn">Zaloguj się</button>
+
+        <div class="auth-actions-row">
+          <button type="button" class="auth-text-btn" id="openForgotBtn">Nie pamiętasz hasła? Zresetuj</button>
+        </div>
+
+        <div class="auth-switch-row">
+          Nie masz konta? <button type="button" class="auth-switch-link" id="switchToRegisterBtn">Utwórz konto</button>
+        </div>
       </div>
 
-      <div class="auth-form-group">
-        <label for="authPassword">Hasło</label>
-        <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password">
+      <!-- Formularz Tworzenia Konta / Rejestracji -->
+      <div id="registerFormSection" class="hidden">
+        <div class="auth-form-group">
+          <label for="regUsername">Login / Nazwa użytkownika</label>
+          <input type="text" id="regUsername" placeholder="np. filip" autocomplete="username" spellcheck="false" autocapitalize="none">
+        </div>
+
+        <div class="auth-form-group">
+          <label for="regPassword">Hasło</label>
+          <input type="password" id="regPassword" placeholder="••••••••" autocomplete="new-password">
+        </div>
+
+        <div class="auth-form-group">
+          <label for="regPasswordConfirm">Powtórz hasło</label>
+          <input type="password" id="regPasswordConfirm" placeholder="••••••••" autocomplete="new-password">
+        </div>
+
+        <div class="auth-form-group">
+          <label for="regEmail">Adres E-mail <span style="color:#777;font-weight:normal;">(do resetu hasła)</span></label>
+          <input type="email" id="regEmail" placeholder="twoj-email@gmail.com" autocomplete="email">
+        </div>
+
+        <div class="remember-row">
+          <label class="checkbox-container">
+            <input type="checkbox" id="rememberMeReg" checked>
+            <span>Zapamiętaj mnie (sesja nie wygasa)</span>
+          </label>
+        </div>
+
+        <button type="button" id="registerSubmitBtn" class="auth-submit-btn">Utwórz konto</button>
+
+        <div class="auth-switch-row">
+          Masz już konto? <button type="button" class="auth-switch-link" id="switchToLoginBtn">Zaloguj się</button>
+        </div>
       </div>
-
-      <div class="auth-form-group">
-        <label for="authEmail">Adres E-mail <span style="color:#777;font-weight:normal;">(do resetu hasła)</span></label>
-        <input type="email" id="authEmail" placeholder="twoj-email@gmail.com" autocomplete="email">
-      </div>
-
-      <div class="remember-row">
-        <label class="checkbox-container">
-          <input type="checkbox" id="rememberMeMobile" checked>
-          <span>Zapamiętaj mnie (sesja nie wygasa)</span>
-        </label>
-      </div>
-
-      <button id="authSubmitBtn" class="auth-submit-btn">Zaloguj / Utwórz konto</button>
-
-      <div class="auth-actions-row">
-        <button type="button" class="auth-text-btn" id="openForgotBtn">Nie pamiętasz hasła? Zresetuj</button>
-      </div>
-
-      <p class="auth-hint">
-        Wpisz nazwę konta i hasło. Jeśli konto jeszcze nie istnieje, zostanie automatycznie utworzone. Zaloguj się tymi samymi danymi w rozszerzeniu na komputerze!
-      </p>
     </div>
 
     <!-- Widok 2: Reset Hasła - Krok 1 (Wysłanie Kodu na E-mail) -->
