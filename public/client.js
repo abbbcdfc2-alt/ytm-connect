@@ -1153,6 +1153,9 @@
       if ((!finalThumb || finalThumb.includes('data:image')) && item.videoId) {
         finalThumb = `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`;
       }
+      if (item.selected && currentState.artwork && (!finalThumb || finalThumb.includes('data:image'))) {
+        finalThumb = currentState.artwork;
+      }
 
       clean.push({
         ...item,
@@ -1195,6 +1198,35 @@
     return clean;
   }
 
+  let lastRenderedItemsSig = '';
+  let lastRenderedSelectedIndex = -1;
+
+  function updatePlayingItemInDom(selectedIndex) {
+    if (!queueList) return;
+    const items = queueList.querySelectorAll('.queue-item');
+    items.forEach((itemEl, idx) => {
+      const isPlaying = (idx === selectedIndex);
+      if (isPlaying) {
+        if (!itemEl.classList.contains('playing')) {
+          itemEl.classList.add('playing');
+          const meta = itemEl.querySelector('.queue-item-meta');
+          if (meta && !meta.querySelector('.queue-equalizer')) {
+            const eq = document.createElement('div');
+            eq.className = 'queue-equalizer';
+            eq.innerHTML = '<span></span><span></span><span></span>';
+            meta.insertBefore(eq, meta.firstChild);
+          }
+        }
+      } else {
+        if (itemEl.classList.contains('playing')) {
+          itemEl.classList.remove('playing');
+          const eq = itemEl.querySelector('.queue-equalizer');
+          if (eq) eq.remove();
+        }
+      }
+    });
+  }
+
   function updateQueue(queue) {
     currentQueue = deduplicateQueue(Array.isArray(queue) ? queue : []);
     const count = currentQueue.length;
@@ -1213,6 +1245,8 @@
     if (!queueList) return;
 
     if (!currentQueue || currentQueue.length === 0) {
+      lastRenderedItemsSig = '';
+      lastRenderedSelectedIndex = -1;
       queueList.innerHTML = '';
       if (queueEmptyState) queueEmptyState.classList.remove('hidden');
       return;
@@ -1220,19 +1254,42 @@
 
     if (queueEmptyState) queueEmptyState.classList.add('hidden');
 
+    const itemsSig = currentQueue.map(i => `${i.id || i.videoId || i.title}|${i.thumb || ''}`).join('##');
+    const selectedIdx = currentQueue.findIndex(i => i.selected);
+
+    // Jeśli lista utworów i miniaturki są DOKŁADNIE TAKIE SAME, nie niszcz DOM - zaktualizuj tylko zaznaczenie!
+    if (itemsSig === lastRenderedItemsSig && queueList.children.length === currentQueue.length) {
+      if (selectedIdx !== lastRenderedSelectedIndex) {
+        lastRenderedSelectedIndex = selectedIdx;
+        updatePlayingItemInDom(selectedIdx);
+      }
+      return;
+    }
+
+    lastRenderedItemsSig = itemsSig;
+    lastRenderedSelectedIndex = selectedIdx;
+
     const prevScrollTop = queueScrollContainer ? queueScrollContainer.scrollTop : 0;
     queueList.innerHTML = '';
+
+    const defaultThumbSvg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' fill='%23222'%3E%3Crect width='44' height='44'/%3E%3Ccircle cx='22' cy='22' r='8' fill='%23333'/%3E%3Cpath d='M20 18v8l6-4z' fill='%23666'/%3E%3C/svg%3E";
 
     currentQueue.forEach((item, index) => {
       const el = document.createElement('div');
       el.className = `queue-item ${item.selected ? 'playing' : ''}`;
       el.dataset.index = index;
 
-      const thumbUrl = item.thumb || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' fill='%23222'%3E%3Crect width='44' height='44'/%3E%3C/svg%3E";
+      const thumbUrl = item.thumb || (item.videoId ? `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg` : defaultThumbSvg);
+      const fallbackUrl = item.videoId ? `https://i.ytimg.com/vi/${item.videoId}/mqdefault.jpg` : defaultThumbSvg;
 
       el.innerHTML = `
         <span class="queue-item-index">${index + 1}</span>
-        <img class="queue-item-thumb" src="${escapeHtml(thumbUrl)}" alt="" loading="lazy" />
+        <img class="queue-item-thumb" 
+             src="${escapeHtml(thumbUrl)}" 
+             alt="" 
+             loading="lazy" 
+             referrerpolicy="no-referrer"
+             onerror="if (this.src !== '${escapeHtml(fallbackUrl)}') { this.src = '${escapeHtml(fallbackUrl)}'; } else { this.src = '${defaultThumbSvg}'; }" />
         <div class="queue-item-details">
           <span class="queue-item-title">${escapeHtml(item.title || 'Nieznany utwór')}</span>
           <div class="queue-item-meta">
@@ -1305,8 +1362,8 @@
 
   function playQueueItem(index) {
     const now = Date.now();
-    if (now - lastQueueItemClickTime < 500) {
-      console.log('[Pilot] Zignorowano podwójne kliknięcie utworu w kolejce');
+    if (now - lastQueueItemClickTime < 250) {
+      console.log('[Pilot] Zignorowano zbyt szybkie kliknięcie utworu w kolejce');
       return;
     }
     lastQueueItemClickTime = now;
@@ -1326,11 +1383,11 @@
       pendingQueueClick = null;
     }, 4000);
 
-    // 2. Bezwzględnie TYLKO kliknięty element ma zaznaczenie w telefonie
+    // 2. Natychmiastowa aktualizacja interfejsu (optymistyczna, bez niszczenia DOM)
     currentQueue.forEach((q, idx) => {
       q.selected = (idx === index);
     });
-    renderQueueList();
+    updatePlayingItemInDom(index);
 
     // 3. Wyślij pełną informację do PC
     if (targetDevice === 'desktop') {
@@ -1340,7 +1397,7 @@
         originalIndex: origIdx,
         videoId: item.videoId || '',
         title: item.title || ''
-      }, 400);
+      }, 300);
     } else {
       if (item.videoId) {
         loadPhoneVideo(item.videoId, 0);

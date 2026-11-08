@@ -3,9 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="referrer" content="no-referrer">
   <title>YTM Connect</title>
   <meta name="theme-color" content="#121212">
-  <link rel="stylesheet" href="style.css?v=1.4.5">
+  <link rel="stylesheet" href="style.css?v=1.4.7">
 </head>
 <body>
   <!-- Ambientny blur w tle na bazie aktualnej okładki -->
@@ -72,7 +73,7 @@
     <!-- Główny odtwarzacz (Okładka, tytuł, kontrolki) -->
     <main class="player-view">
       <div class="art-container">
-        <img id="albumArt" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' fill='%231f1f1f'%3E%3Crect width='300' height='300'/%3E%3Ccircle cx='150' cy='150' r='50' fill='%23333333'/%3E%3Cpolygon points='145,130 165,150 145,170' fill='%23888888'/%3E%3C/svg%3E" alt="Okładka" />
+        <img id="albumArt" referrerpolicy="no-referrer" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' fill='%231f1f1f'%3E%3Crect width='300' height='300'/%3E%3Ccircle cx='150' cy='150' r='50' fill='%23333333'/%3E%3Cpolygon points='145,130 165,150 145,170' fill='%23888888'/%3E%3C/svg%3E" alt="Okładka" />
       </div>
 
       <div class="track-info">
@@ -409,6 +410,6 @@
   </div>
 
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="client.js?v=1.4.6"></script>
+  <script src="client.js?v=1.4.7"></script>
 </body>
 </html>
