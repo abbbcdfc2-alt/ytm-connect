@@ -198,6 +198,15 @@
   const statusText = document.getElementById('statusText');
   const albumArt = document.getElementById('albumArt');
   const bgBlur = document.getElementById('bgBlur');
+  if (albumArt) {
+    albumArt.onerror = () => {
+      if (albumArt.src.includes('maxresdefault.jpg')) {
+        const fb = albumArt.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+        albumArt.src = fb;
+        if (bgBlur) bgBlur.style.backgroundImage = `url("${fb}")`;
+      }
+    };
+  }
   const trackTitle = document.getElementById('trackTitle');
   const trackArtist = document.getElementById('trackArtist');
   const progressBarFill = document.getElementById('progressBarFill');
@@ -352,6 +361,47 @@
   let isQueueSheetOpen = false;
   let pendingPlayPauseLock = null;
   let pendingLikeLock = null;
+
+  function upgradeThumbnailQuality(url, size = 300, videoId = null) {
+    if (!url && !videoId) return '';
+    let u = (url || '').trim();
+    if (u.startsWith('//')) u = 'https:' + u;
+
+    let vid = videoId;
+    if (!vid && u) {
+      const m = u.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})/i) || u.match(/[?&]v=([a-zA-Z0-9_-]{11})/i);
+      if (m) vid = m[1];
+    }
+
+    // 1. Google UserContent / ggpht (oficjalne okładki albumów YouTube Music)
+    if (u.includes('googleusercontent.com') || u.includes('ggpht.com')) {
+      u = u.split('?')[0].split('#')[0];
+      if (/=[wsh]\d+/i.test(u)) {
+        u = u.replace(/=w\d+-h\d+[^?#]*/i, `=w${size}-h${size}-l90-rj`);
+        u = u.replace(/=s\d+[^?#]*/i, `=s${size}-c`);
+        return u;
+      }
+      if (!u.includes('=')) {
+        return u + `=w${size}-h${size}-l90-rj`;
+      }
+      return u;
+    }
+
+    // 2. YouTube CDN (i.ytimg.com / img.youtube.com - klipy, teledyski, sety DJ)
+    if (u.includes('ytimg.com') || u.includes('youtube.com') || vid) {
+      if (vid) {
+        if (size >= 500) {
+          return `https://i.ytimg.com/vi/${vid}/maxresdefault.jpg`;
+        }
+        return `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`;
+      }
+      u = u.split('?')[0].split('#')[0];
+      u = u.replace(/\/(default|mqdefault|sddefault)\.(jpg|webp)/i, '/hqdefault.jpg');
+      return u;
+    }
+
+    return u;
+  }
 
   function formatTime(seconds) {
     if (isNaN(seconds) || seconds < 0) return '0:00';
@@ -544,8 +594,9 @@
       trackArtist.textContent = (state.artist || '') + (state.album ? ' • ' + state.album : '');
 
       if (state.artwork) {
-        albumArt.src = state.artwork;
-        bgBlur.style.backgroundImage = `url("${state.artwork}")`;
+        const hiResArt = upgradeThumbnailQuality(state.artwork, 544, state.videoId);
+        albumArt.src = hiResArt;
+        bgBlur.style.backgroundImage = `url("${hiResArt}")`;
       }
 
       if (state.videoId || selectedSong) {
@@ -951,10 +1002,10 @@
       const item = document.createElement('div');
       item.className = 'search-item song-item';
 
-      const thumbUrl = song.thumb || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='46' height='46' fill='%23333'%3E%3Crect width='46' height='46'/%3E%3C/svg%3E";
+      const thumbUrl = upgradeThumbnailQuality(song.thumb, 120) || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='46' height='46' fill='%23333'%3E%3Crect width='46' height='46'/%3E%3C/svg%3E";
 
       item.innerHTML = `
-        <img class="song-thumb" src="${escapeHtml(thumbUrl)}" alt="" />
+        <img class="song-thumb" referrerpolicy="no-referrer" src="${escapeHtml(thumbUrl)}" alt="" />
         <div class="song-info">
           <span class="song-title">${escapeHtml(song.title)}</span>
           <span class="song-subtitle">${escapeHtml(song.subtitle || '')}</span>
@@ -1022,8 +1073,9 @@
     trackTitle.textContent = song.title;
     trackArtist.textContent = song.subtitle || 'YouTube Music';
     if (song.thumb) {
-      albumArt.src = song.thumb;
-      bgBlur.style.backgroundImage = `url("${song.thumb}")`;
+      const hiRes = upgradeThumbnailQuality(song.thumb, 544);
+      albumArt.src = hiRes;
+      bgBlur.style.backgroundImage = `url("${hiRes}")`;
     }
     btnOpenInYtmApp.classList.remove('hidden');
     playIcon.classList.add('hidden');
@@ -1149,12 +1201,12 @@
       }
 
       // Jeśli brakuje okładki, uzupełnij z YouTube CDN
-      let finalThumb = item.thumb;
+      let finalThumb = upgradeThumbnailQuality(item.thumb, 300, item.videoId);
       if ((!finalThumb || finalThumb.includes('data:image')) && item.videoId) {
         finalThumb = `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`;
       }
       if (item.selected && currentState.artwork && (!finalThumb || finalThumb.includes('data:image'))) {
-        finalThumb = currentState.artwork;
+        finalThumb = upgradeThumbnailQuality(currentState.artwork, 300, item.videoId);
       }
 
       clean.push({
@@ -1279,8 +1331,8 @@
       el.className = `queue-item ${item.selected ? 'playing' : ''}`;
       el.dataset.index = index;
 
-      const thumbUrl = item.thumb || (item.videoId ? `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg` : defaultThumbSvg);
-      const fallbackUrl = item.videoId ? `https://i.ytimg.com/vi/${item.videoId}/mqdefault.jpg` : defaultThumbSvg;
+      const thumbUrl = upgradeThumbnailQuality(item.thumb, 300, item.videoId) || (item.videoId ? `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg` : defaultThumbSvg);
+      const fallbackUrl = item.videoId ? `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg` : defaultThumbSvg;
 
       el.innerHTML = `
         <span class="queue-item-index">${index + 1}</span>
@@ -1289,7 +1341,7 @@
              alt="" 
              loading="lazy" 
              referrerpolicy="no-referrer"
-             onerror="if (this.src !== '${escapeHtml(fallbackUrl)}') { this.src = '${escapeHtml(fallbackUrl)}'; } else { this.src = '${defaultThumbSvg}'; }" />
+             onerror="if (this.src.includes('maxresdefault')) { this.src = this.src.replace('maxresdefault', 'hqdefault'); } else if (this.src !== '${escapeHtml(fallbackUrl)}') { this.src = '${escapeHtml(fallbackUrl)}'; } else { this.src = '${defaultThumbSvg}'; }" />
         <div class="queue-item-details">
           <span class="queue-item-title">${escapeHtml(item.title || 'Nieznany utwór')}</span>
           <div class="queue-item-meta">
@@ -1457,6 +1509,9 @@
 
     if (targetDevice === 'desktop') {
       sendCommand('request_state');
+      if (currentQueue.length === 0) {
+        sendCommand('request_queue');
+      }
     }
 
     // Przewiń płynnie do aktualnie odtwarzanego utworu

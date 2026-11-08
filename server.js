@@ -1010,6 +1010,47 @@ function broadcastRoomInfo(roomName) {
   }
 }
 
+function upgradeThumbnailQuality(url, size = 300, videoId = null) {
+  if (!url && !videoId) return '';
+  let u = (url || '').trim();
+  if (u.startsWith('//')) u = 'https:' + u;
+
+  let vid = videoId;
+  if (!vid && u) {
+    const m = u.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})/i) || u.match(/[?&]v=([a-zA-Z0-9_-]{11})/i);
+    if (m) vid = m[1];
+  }
+
+  // 1. Google UserContent / ggpht (oficjalne okładki albumów YouTube Music)
+  if (u.includes('googleusercontent.com') || u.includes('ggpht.com')) {
+    u = u.split('?')[0].split('#')[0];
+    if (/=[wsh]\d+/i.test(u)) {
+      u = u.replace(/=w\d+-h\d+[^?#]*/i, `=w${size}-h${size}-l90-rj`);
+      u = u.replace(/=s\d+[^?#]*/i, `=s${size}-c`);
+      return u;
+    }
+    if (!u.includes('=')) {
+      return u + `=w${size}-h${size}-l90-rj`;
+    }
+    return u;
+  }
+
+  // 2. YouTube CDN (i.ytimg.com / img.youtube.com - klipy, teledyski, sety DJ)
+  if (u.includes('ytimg.com') || u.includes('youtube.com') || vid) {
+    if (vid) {
+      if (size >= 500) {
+        return `https://i.ytimg.com/vi/${vid}/maxresdefault.jpg`;
+      }
+      return `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`;
+    }
+    u = u.split('?')[0].split('#')[0];
+    u = u.replace(/\/(default|mqdefault|sddefault)\.(jpg|webp)/i, '/hqdefault.jpg');
+    return u;
+  }
+
+  return u;
+}
+
 function getYTMSuggestions(query, callback) {
   const postDataSuggest = JSON.stringify({
     context: { client: { clientName: 'WEB_REMIX', clientVersion: '1.20231204.01.00', hl: 'pl', gl: 'PL' } },
@@ -1097,7 +1138,7 @@ function getYTMSuggestions(query, callback) {
             const thumbs = r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
             let thumb = '';
             if (thumbs.length > 0) {
-              thumb = thumbs[thumbs.length - 1].url;
+              thumb = upgradeThumbnailQuality(thumbs[thumbs.length - 1].url, 300);
             }
 
             const videoId = r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.navigationEndpoint?.watchEndpoint?.videoId ||
